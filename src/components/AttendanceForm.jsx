@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Camera, Upload, Navigation } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Camera, Upload, Navigation, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 const AttendanceForm = ({ onAttendanceAdded }) => {
@@ -16,8 +16,11 @@ const AttendanceForm = ({ onAttendanceAdded }) => {
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasAttendedToday, setHasAttendedToday] = useState(false);
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
 
-  // ===== AUTO-DETECT LOKASI =====
+  // === AUTO-DETECT LOKASI ===
   useEffect(() => {
     getCurrentLocation();
   }, []);
@@ -61,7 +64,7 @@ const AttendanceForm = ({ onAttendanceAdded }) => {
     );
   };
 
-  // ===== CEK PRESENSI HARI INI =====
+  // === CEK PRESENSI HARI INI ===
   const checkIfAlreadyAttended = async (nim) => {
     if (!nim) return;
     const today = new Date().toISOString().split('T')[0];
@@ -83,7 +86,7 @@ const AttendanceForm = ({ onAttendanceAdded }) => {
     if (formData.nim.trim()) checkIfAlreadyAttended(formData.nim);
   }, [formData.nim]);
 
-  // ===== UPLOAD GAMBAR KE SUPABASE =====
+  // === UPLOAD GAMBAR KE SUPABASE ===
   const uploadImageToSupabase = async (file) => {
     try {
       const fileExt = file.name.split('.').pop();
@@ -91,14 +94,12 @@ const AttendanceForm = ({ onAttendanceAdded }) => {
         .toString(36)
         .substring(2)}.${fileExt}`;
 
-      // Upload ke bucket
       const { error: uploadError } = await supabase.storage
         .from('presensi-images')
         .upload(fileName, file);
 
       if (uploadError) throw uploadError;
 
-      // Ambil URL publik
       const { data: publicData } = supabase.storage
         .from('presensi-images')
         .getPublicUrl(fileName);
@@ -110,7 +111,67 @@ const AttendanceForm = ({ onAttendanceAdded }) => {
     }
   };
 
-  // ===== HANDLE SUBMIT =====
+  // === HANDLE FOTO DARI FILE ===
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Ukuran file maksimal 5MB');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setImagePreview(reader.result);
+      setFormData((prev) => ({ ...prev, image: file }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // === AKTIFKAN KAMERA SELFIE ===
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user' },
+      });
+      videoRef.current.srcObject = stream;
+      setIsCameraActive(true);
+    } catch (error) {
+      alert('Tidak dapat mengakses kamera');
+    }
+  };
+
+  // === AMBIL FOTO DARI KAMERA ===
+  const capturePhoto = () => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const context = canvas.getContext('2d');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    canvas.toBlob((blob) => {
+      const file = new File([blob], `photo_${Date.now()}.jpg`, {
+        type: 'image/jpeg',
+      });
+      const imageUrl = URL.createObjectURL(blob);
+      setImagePreview(imageUrl);
+      setFormData((prev) => ({ ...prev, image: file }));
+
+      stopCamera();
+    }, 'image/jpeg');
+  };
+
+  // === MATIKAN KAMERA ===
+  const stopCamera = () => {
+    const stream = videoRef.current?.srcObject;
+    if (stream) {
+      stream.getTracks().forEach((track) => track.stop());
+    }
+    setIsCameraActive(false);
+  };
+
+  // === HANDLE SUBMIT ===
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.name || !formData.nim) {
@@ -148,7 +209,6 @@ const AttendanceForm = ({ onAttendanceAdded }) => {
 
       alert('✅ Presensi berhasil disimpan!');
       onAttendanceAdded?.(data[0]);
-
       setFormData({
         name: '',
         nim: '',
@@ -163,23 +223,6 @@ const AttendanceForm = ({ onAttendanceAdded }) => {
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  // ===== HANDLE FOTO =====
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      alert('Ukuran file maksimal 5MB');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setImagePreview(reader.result);
-      setFormData((prev) => ({ ...prev, image: file }));
-    };
-    reader.readAsDataURL(file);
   };
 
   return (
@@ -255,6 +298,7 @@ const AttendanceForm = ({ onAttendanceAdded }) => {
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Foto Presensi
         </label>
+
         {imagePreview ? (
           <div className="space-y-2">
             <img
@@ -273,28 +317,60 @@ const AttendanceForm = ({ onAttendanceAdded }) => {
               Hapus Foto
             </button>
           </div>
-        ) : (
-          <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-500 bg-gray-50">
-            <Camera className="w-6 h-6 text-gray-400 mb-1" />
-            <p className="text-sm text-gray-500">Klik untuk upload foto</p>
-            <input
-              type="file"
-              className="hidden"
-              accept="image/*"
-              onChange={handleImageUpload}
-              capture="environment"
-              required
+        ) : isCameraActive ? (
+          <div className="space-y-2">
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              className="w-full h-40 rounded-lg bg-black object-cover"
             />
-          </label>
+            <canvas ref={canvasRef} className="hidden"></canvas>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={capturePhoto}
+                className="flex-1 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700"
+              >
+                Ambil Foto
+              </button>
+              <button
+                type="button"
+                onClick={stopCamera}
+                className="flex-1 bg-gray-400 text-white py-2 rounded-lg hover:bg-gray-500"
+              >
+                Batal
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            <label className="flex flex-col items-center justify-center h-24 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-500 bg-gray-50">
+              <Upload className="w-6 h-6 text-gray-400 mb-1" />
+              <p className="text-sm text-gray-500">Upload Foto</p>
+              <input
+                type="file"
+                className="hidden"
+                accept="image/*"
+                onChange={handleImageUpload}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={startCamera}
+              className="flex flex-col items-center justify-center h-24 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-500 bg-gray-50"
+            >
+              <Camera className="w-6 h-6 text-gray-400 mb-1" />
+              <p className="text-sm text-gray-500">Ambil Selfie</p>
+            </button>
+          </div>
         )}
       </div>
 
-      {/* BUTTON */}
+      {/* BUTTON SUBMIT */}
       <button
         type="submit"
-        disabled={
-          !formData.name || !formData.nim || isSubmitting || hasAttendedToday
-        }
+        disabled={!formData.name || !formData.nim || isSubmitting || hasAttendedToday}
         className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
       >
         {isSubmitting ? (

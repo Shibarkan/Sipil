@@ -135,7 +135,7 @@ function App() {
               <div className="p-2 bg-blue-600 rounded-lg">
                 <Users className="text-white w-6 h-6" />
               </div>
-              <h1 className="text-3xl font-bold text-gray-800">Digital Presensi</h1>
+              <h1 className="text-3xl font-bold text-gray-800">Absen Kelazz A</h1>
             </div>
             
             {/* Today's Date */}
