@@ -1,148 +1,237 @@
-import React from 'react';
-import { Download } from 'lucide-react';
+import React, { useState } from 'react';
+import { Download, Loader2 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
-import html2canvas from 'html2canvas';
 
 const PDFExportButton = ({ attendances, filterDate }) => {
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [progress, setProgress] = useState(0);
+
+  // 🔹 Fungsi aman untuk konversi gambar Supabase → Base64 (tanpa CORS error)
+  const toDataURL = (url) => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous'; // penting agar bisa load dari Supabase public bucket
+      img.src = `${url}?t=${Date.now()}`; // tambahkan cache-buster agar tidak ke-cache
+
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          const dataURL = canvas.toDataURL('image/jpg');
+          resolve(dataURL);
+        } catch (err) {
+          reject(err);
+        }
+      };
+
+      img.onerror = (err) => {
+        reject(err);
+      };
+    });
+  };
+
+  // 🔹 Fungsi utama generate PDF
   const generatePDF = async () => {
     if (attendances.length === 0) {
       alert('Tidak ada data untuk diexport!');
       return;
     }
 
+    setIsGenerating(true);
+    setProgress(0);
+
     try {
       const pdf = new jsPDF('p', 'mm', 'a4');
-      let yPosition = 15;
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const margin = 15;
 
-      // Header dengan gradient effect
+      // ===== HEADER UTAMA =====
       pdf.setFillColor(59, 130, 246);
-      pdf.rect(0, 0, pageWidth, 25, 'F');
-      
+      pdf.rect(0, 0, 210, 30, 'F');
       pdf.setTextColor(255, 255, 255);
-      pdf.setFontSize(16);
-      pdf.text('LAPORAN PRESENSI DIGITAL', pageWidth / 2, 12, { align: 'center' });
-      
+      pdf.setFontSize(18);
+      pdf.text('LAPORAN PRESENSI DIGITAL', 105, 15, { align: 'center' });
       pdf.setFontSize(10);
-      pdf.text(`Periode: ${filterDate || 'Semua Data'}`, pageWidth / 2, 18, { align: 'center' });
-      
-      yPosition = 30;
+      pdf.text(`Periode: ${filterDate || 'Hari Ini'}`, 105, 22, { align: 'center' });
 
-      for (let i = 0; i < attendances.length; i++) {
-        const attendance = attendances[i];
+      // ===== INFO RINGKAS =====
+      pdf.setTextColor(0, 0, 0);
+      pdf.setFontSize(10);
+      pdf.text(`Total Presensi: ${attendances.length} orang`, 15, 40);
+      pdf.text(`Tanggal Export: ${new Date().toLocaleDateString('id-ID')}`, 15, 46);
 
-        if (yPosition > 250) {
+      // ===== TABEL DATA =====
+      let yPosition = 55;
+
+      const drawTableHeader = () => {
+        pdf.setFillColor(41, 128, 185);
+        pdf.rect(15, yPosition, 180, 8, 'F');
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFontSize(9);
+        pdf.text('No', 18, yPosition + 5);
+        pdf.text('Nama', 28, yPosition + 5);
+        pdf.text('NIM', 78, yPosition + 5);
+        pdf.text('Kelas', 108, yPosition + 5);
+        pdf.text('Lokasi', 125, yPosition + 5);
+        pdf.text('Waktu', 165, yPosition + 5);
+        pdf.text('Foto', 185, yPosition + 5);
+      };
+
+      drawTableHeader();
+      yPosition += 12;
+      pdf.setFontSize(8);
+
+      attendances.forEach((attendance, index) => {
+        if (yPosition > 270) {
           pdf.addPage();
-          yPosition = 15;
-          
-          // Header untuk halaman baru
           pdf.setFillColor(59, 130, 246);
-          pdf.rect(0, 0, pageWidth, 25, 'F');
+          pdf.rect(0, 0, 210, 30, 'F');
           pdf.setTextColor(255, 255, 255);
-          pdf.setFontSize(16);
-          pdf.text('LAPORAN PRESENSI DIGITAL', pageWidth / 2, 12, { align: 'center' });
-          yPosition = 30;
+          pdf.setFontSize(18);
+          pdf.text('LAPORAN PRESENSI DIGITAL', 105, 15, { align: 'center' });
+          pdf.setFontSize(10);
+          pdf.text(`Periode: ${filterDate || 'Hari Ini'} - Lanjutan`, 105, 22, { align: 'center' });
+          yPosition = 40;
+          drawTableHeader();
+          yPosition += 12;
         }
 
-        const tempDiv = document.createElement('div');
-        tempDiv.style.width = '180mm';
-        tempDiv.style.padding = '20px';
-        tempDiv.style.border = '2px solid #e5e7eb';
-        tempDiv.style.borderRadius = '16px';
-        tempDiv.style.backgroundColor = 'white';
-        tempDiv.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
-        tempDiv.style.marginBottom = '10px';
-        
-        tempDiv.innerHTML = `
-          <div style="display: flex; gap: 20px; align-items: start; font-family: Arial, sans-serif;">
-            ${attendance.image ? `
-              <div style="width: 120px; height: 120px; flex-shrink: 0;">
-                <img src="${attendance.image}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 12px; border: 3px solid #10b981;" />
-              </div>
-            ` : ''}
-            
-            <div style="flex: 1;">
-              <!-- Header dengan Nama, NIM, Kelas -->
-              <div style="margin-bottom: 15px;">
-                <h3 style="font-size: 18px; font-weight: bold; color: #1f2937; margin: 0 0 8px 0;">${attendance.name}</h3>
-                <div style="display: flex; gap: 15px; flex-wrap: wrap;">
-                  <div style="background: #dbeafe; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: bold; color: #1e40af;">
-                    NIM: ${attendance.nim}
-                  </div>
-                  <div style="background: #dcfce7; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: bold; color: #166534;">
-                    Kelas: ${attendance.kelas}
-                  </div>
-                  <div style="background: #fef3c7; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: bold; color: #92400e;">
-                    ${attendance.timestamp}
-                  </div>
-                </div>
-              </div>
-              
-              <!-- Detail Information -->
-              <div style="display: grid; gap: 8px; font-size: 11px;">
-                ${attendance.department ? `
-                  <div style="display: flex; align-items: center; gap: 8px; padding: 6px 0;">
-                    <span style="font-weight: bold; color: #374151; min-width: 80px;">Mata Kuliah:</span>
-                    <span style="color: #6b7280;">${attendance.department}</span>
-                  </div>
-                ` : ''}
-                
-                ${attendance.location ? `
-                  <div style="display: flex; align-items: start; gap: 8px; padding: 6px 0;">
-                    <span style="font-weight: bold; color: #374151; min-width: 80px;">Lokasi:</span>
-                    <span style="color: #6b7280; font-size: 10px; line-height: 1.3;">${attendance.location}</span>
-                  </div>
-                ` : ''}
-              </div>
-              
-              ${attendance.notes ? `
-                <div style="margin-top: 12px; padding: 10px; background: #eff6ff; border-radius: 8px; border-left: 4px solid #3b82f6;">
-                  <p style="font-size: 10px; color: #1e40af; margin: 0; font-weight: bold;">Catatan:</p>
-                  <p style="font-size: 10px; color: #374151; margin: 2px 0 0 0;">${attendance.notes}</p>
-                </div>
-              ` : ''}
-            </div>
-          </div>
-        `;
+        // Warna selang-seling
+        if (index % 2 === 0) {
+          pdf.setFillColor(245, 245, 245);
+          pdf.rect(15, yPosition - 4, 180, 8, 'F');
+        }
 
-        document.body.appendChild(tempDiv);
+        pdf.setTextColor(0, 0, 0);
+        pdf.text((index + 1).toString(), 18, yPosition);
+        pdf.text(attendance.name || '-', 28, yPosition, { maxWidth: 45 });
+        pdf.text(attendance.nim || '-', 78, yPosition);
+        pdf.text(attendance.kelas || '-', 108, yPosition);
 
-        const canvas = await html2canvas(tempDiv, {
-          scale: 2,
-          useCORS: true,
-          allowTaint: false,
-          backgroundColor: '#ffffff',
-          logging: false
+        const location = attendance.location
+          ? attendance.location.split(',')[0].substring(0, 15) +
+            (attendance.location.split(',')[0].length > 15 ? '...' : '')
+          : '-';
+        pdf.text(location, 125, yPosition);
+
+        const time = new Date(attendance.created_at).toLocaleTimeString('id-ID', {
+          hour: '2-digit',
+          minute: '2-digit',
         });
+        pdf.text(time, 165, yPosition);
+        pdf.text(attendance.image_url ? '✅' : '❌', 185, yPosition);
 
-        document.body.removeChild(tempDiv);
+        yPosition += 8;
+      });
 
-        const imgData = canvas.toDataURL('image/jpeg', 0.9);
-        const imgWidth = pageWidth - (margin * 2);
-        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      // ===== HALAMAN FOTO PRESENSI =====
+      const attendancesWithPhotos = attendances.filter((att) => att.image_url);
+      if (attendancesWithPhotos.length > 0) {
+        pdf.addPage();
+        pdf.setFillColor(59, 130, 246);
+        pdf.rect(0, 0, 210, 30, 'F');
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFontSize(16);
+        pdf.text('BUKTI FOTO PRESENSI', 105, 15, { align: 'center' });
+        pdf.setFontSize(10);
+        pdf.text(`Total ${attendancesWithPhotos.length} foto tersedia`, 105, 22, { align: 'center' });
 
-        pdf.addImage(imgData, 'JPEG', margin, yPosition, imgWidth, imgHeight);
-        yPosition += imgHeight + 8;
+        let photoY = 40;
+
+        for (let i = 0; i < attendancesWithPhotos.length; i++) {
+          const attendance = attendancesWithPhotos[i];
+          setProgress(Math.round(((i + 1) / attendancesWithPhotos.length) * 100));
+
+          if (photoY > 200) {
+            pdf.addPage();
+            pdf.setFillColor(59, 130, 246);
+            pdf.rect(0, 0, 210, 30, 'F');
+            pdf.setTextColor(255, 255, 255);
+            pdf.setFontSize(16);
+            pdf.text('BUKTI FOTO PRESENSI (Lanjutan)', 105, 15, { align: 'center' });
+            photoY = 40;
+          }
+
+          pdf.setTextColor(0, 0, 0);
+          pdf.setFontSize(10);
+          pdf.text(`Nama: ${attendance.name}`, 20, photoY);
+          pdf.text(`NIM: ${attendance.nim}`, 20, photoY + 5);
+          pdf.text(`Kelas: ${attendance.kelas}`, 20, photoY + 10);
+          pdf.text(`Waktu: ${new Date(attendance.created_at).toLocaleTimeString('id-ID')}`, 20, photoY + 15);
+          if (attendance.location) {
+            pdf.text(`Lokasi: ${attendance.location.substring(0, 50)}`, 20, photoY + 20);
+          }
+
+          try {
+            const imageData = await toDataURL(attendance.image_url);
+            if (imageData) {
+              pdf.addImage(imageData, 'JPG', 140, photoY, 60, 60);
+            } else {
+              pdf.setTextColor(255, 0, 0);
+              pdf.text('(Gagal memuat gambar)', 140, photoY + 10);
+            }
+          } catch (error) {
+            console.error('Gagal memuat gambar:', error);
+            pdf.setTextColor(255, 0, 0);
+            pdf.text('(Gagal memuat gambar)', 140, photoY + 10);
+          }
+
+          pdf.setDrawColor(200, 200, 200);
+          pdf.line(15, photoY + 75, 195, photoY + 75);
+          photoY += 85;
+        }
       }
 
-      const fileName = `presensi_${filterDate || 'all'}_${new Date().getTime()}.pdf`;
+      // ===== FOOTER =====
+      const pageCount = pdf.internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        pdf.setPage(i);
+        pdf.setFontSize(8);
+        pdf.setTextColor(100);
+        pdf.text(
+          `Halaman ${i} dari ${pageCount} • Generated on ${new Date().toLocaleString('id-ID')}`,
+          105,
+          290,
+          { align: 'center' }
+        );
+      }
+
+      // ===== SIMPAN FILE =====
+      const fileName = `presensi_${filterDate || 'today'}_${new Date().getTime()}.pdf`;
       pdf.save(fileName);
 
+      alert('✅ PDF berhasil dibuat!');
     } catch (error) {
       console.error('Error generating PDF:', error);
-      alert('Error saat generate PDF. Silakan coba lagi.');
+      alert('❌ Terjadi kesalahan saat generate PDF.');
+    } finally {
+      setIsGenerating(false);
+      setProgress(0);
     }
   };
 
   return (
     <button
       onClick={generatePDF}
-      disabled={attendances.length === 0}
-      className="flex items-center justify-center gap-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-3 rounded-xl font-semibold hover:from-purple-700 hover:to-pink-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transform hover:scale-[1.02]"
+      disabled={attendances.length === 0 || isGenerating}
+      className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+        isGenerating
+          ? 'bg-gray-400 text-white cursor-wait'
+          : 'bg-blue-600 text-white hover:bg-blue-700'
+      }`}
     >
-      <Download className="w-5 h-5" />
-      Export PDF ({attendances.length})
+      {isGenerating ? (
+        <>
+          <Loader2 className="w-4 h-4 animate-spin" />
+          Membuat PDF... {progress}%
+        </>
+      ) : (
+        <>
+          <Download className="w-4 h-4" />
+          Export PDF ({attendances.length})
+        </>
+      )}
     </button>
   );
 };

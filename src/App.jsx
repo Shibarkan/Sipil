@@ -1,74 +1,191 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import AttendanceForm from './components/AttendanceForm';
 import AttendanceList from './components/AttendanceList';
 import PDFExportButton from './components/PDFExportButton';
-import { Users, Calendar, Download } from 'lucide-react';
+import { Users, Calendar, Database, Clock } from 'lucide-react';
+import { supabase } from './lib/supabase';
 
 function App() {
   const [attendances, setAttendances] = useState([]);
-  const [filterDate, setFilterDate] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [todayAttendance, setTodayAttendance] = useState(null);
+  const [userNIM, setUserNIM] = useState('');
 
-  const addAttendance = (data) => {
-    const newAttendance = {
-      id: Date.now(),
-      timestamp: new Date().toLocaleString(),
-      ...data
-    };
-    setAttendances(prev => [newAttendance, ...prev]);
+  // Set tanggal hari ini
+  const today = new Date().toISOString().split('T')[0];
+
+  // Fetch data presensi hari ini
+  const fetchTodayAttendances = async () => {
+    try {
+      const startDate = new Date(today);
+      const endDate = new Date(today);
+      endDate.setDate(endDate.getDate() + 1);
+
+      const { data, error } = await supabase
+        .from('attendances')
+        .select('*')
+        .gte('created_at', startDate.toISOString())
+        .lt('created_at', endDate.toISOString())
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      setAttendances(data || []);
+    } catch (error) {
+      console.error('Error fetching attendances:', error);
+      alert('Error mengambil data presensi');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const filteredAttendances = filterDate
-    ? attendances.filter(att => att.timestamp.includes(filterDate))
-    : attendances;
+  // Cek apakah user sudah absen hari ini
+  const checkTodayAttendance = async (nim) => {
+    if (!nim) return;
+
+    try {
+      const startDate = new Date(today);
+      const endDate = new Date(today);
+      endDate.setDate(endDate.getDate() + 1);
+
+      const { data, error } = await supabase
+        .from('attendances')
+        .select('*')
+        .eq('nim', nim)
+        .gte('created_at', startDate.toISOString())
+        .lt('created_at', endDate.toISOString());
+
+      if (error) throw error;
+
+      setTodayAttendance(data && data.length > 0 ? data[0] : null);
+    } catch (error) {
+      console.error('Error checking today attendance:', error);
+    }
+  };
+
+  // Real-time updates
+  const setupRealtimeSubscription = () => {
+    const subscription = supabase
+      .channel('attendances-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'attendances'
+        },
+        (payload) => {
+          fetchTodayAttendances();
+          if (userNIM) {
+            checkTodayAttendance(userNIM);
+          }
+        }
+      )
+      .subscribe();
+
+    return subscription;
+  };
+
+  useEffect(() => {
+    fetchTodayAttendances();
+    
+    const subscription = setupRealtimeSubscription();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [userNIM]);
+
+  const handleAttendanceAdded = (newAttendance) => {
+    setAttendances(prev => [newAttendance, ...prev]);
+    setUserNIM(newAttendance.nim);
+    checkTodayAttendance(newAttendance.nim);
+  };
+
+  // Format tanggal hari ini
+  const getTodayDisplay = () => {
+    const today = new Date();
+    return today.toLocaleDateString('id-ID', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4">
-      <div className="max-w-6xl mx-auto">
+    <div className="min-h-screen bg-gray-50 py-6 px-4">
+      <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="text-center mb-12">
-          <div className="flex items-center justify-center gap-3 mb-4">
-            <div className="p-3 bg-blue-600 rounded-xl">
-              <Users className="text-white w-8 h-8" />
+        <div className="text-center mb-8">
+          <div className="flex items-center justify-center gap-3 mb-3">
+            <div className="p-2 bg-blue-600 rounded-lg">
+              <Users className="text-white w-6 h-6" />
             </div>
-            <h1 className="text-4xl font-bold text-gray-800">Digital Presensi</h1>
+            <h1 className="text-3xl font-bold text-gray-800">Digital Presensi</h1>
           </div>
-          <p className="text-gray-600 text-lg">Sistem presensi modern dengan export PDF</p>
+          
+          {/* Today's Date */}
+          <div className="inline-flex items-center gap-2 bg-white px-4 py-2 rounded-lg shadow border border-gray-200 mb-4">
+            <Clock className="w-4 h-4 text-blue-600" />
+            <span className="text-sm font-medium text-gray-700">{getTodayDisplay()}</span>
+          </div>
+
+          <p className="text-gray-600">Presensi Kelasss A bosq</p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* Form Section */}
           <div className="lg:col-span-1">
-            <div className="bg-white rounded-2xl shadow-lg p-6 sticky top-8">
-              <h2 className="text-xl font-semibold text-gray-800 mb-6 flex items-center gap-2">
-                <Calendar className="w-5 h-5" />
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 sticky top-6">
+              <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <Users className="w-5 h-5 text-blue-600" />
                 Form Presensi
               </h2>
-              <AttendanceForm onSubmit={addAttendance} />
+              
+              {/* Attendance Status */}
+              {todayAttendance && userNIM && (
+                <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-green-800 text-sm font-medium">
+                    ✅ Sudah absen hari ini
+                  </p>
+                  <p className="text-green-700 text-xs">
+                    {new Date(todayAttendance.created_at).toLocaleTimeString('id-ID')}
+                  </p>
+                </div>
+              )}
+
+              <AttendanceForm onAttendanceAdded={handleAttendanceAdded} />
             </div>
           </div>
 
-          {/* List & Export Section */}
-          <div className="lg:col-span-2">
-            <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
+          {/* List Section */}
+          <div className="lg:col-span-3">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-                <h2 className="text-xl font-semibold text-gray-800">Data Presensi</h2>
-                
-                <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-                  <input
-                    type="date"
-                    value={filterDate}
-                    onChange={(e) => setFilterDate(e.target.value)}
-                    className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                  
-                  <PDFExportButton 
-                    attendances={filteredAttendances} 
-                    filterDate={filterDate}
-                  />
+                <div>
+                  <h2 className="text-xl font-bold text-gray-800">Data Presensi Hari Ini</h2>
+                  {!isLoading && (
+                    <p className="text-gray-600 text-sm mt-1">
+                      {attendances.length} data ditemukan
+                    </p>
+                  )}
                 </div>
+                
+                <PDFExportButton 
+                  attendances={attendances} 
+                  filterDate={today}
+                />
               </div>
 
-              <AttendanceList attendances={filteredAttendances} />
+              {isLoading ? (
+                <div className="text-center py-8">
+                  <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+                  <p className="text-gray-600 text-sm">Memuat data presensi...</p>
+                </div>
+              ) : (
+                <AttendanceList attendances={attendances} />
+              )}
             </div>
           </div>
         </div>

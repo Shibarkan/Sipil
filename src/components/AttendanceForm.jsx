@@ -1,141 +1,201 @@
 import React, { useState, useEffect } from 'react';
-import { Camera, User, MapPin, Calendar, IdCard, Users, Navigation } from 'lucide-react';
+import { Camera, Upload, Navigation } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
-const AttendanceForm = ({ onSubmit }) => {
+const AttendanceForm = ({ onAttendanceAdded }) => {
   const [formData, setFormData] = useState({
     name: '',
     nim: '',
-    kelas: '',
+    kelas: 'A',
     location: '',
-    department: '',
-    notes: '',
-    image: null
+    image: null,
+    coordinates: null,
   });
 
   const [imagePreview, setImagePreview] = useState(null);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
-  const [locationError, setLocationError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [hasAttendedToday, setHasAttendedToday] = useState(false);
 
-  // Auto-get location on component mount
+  // ===== AUTO-DETECT LOKASI =====
   useEffect(() => {
     getCurrentLocation();
   }, []);
 
   const getCurrentLocation = () => {
     if (!navigator.geolocation) {
-      setLocationError('Geolocation tidak didukung di browser ini');
+      alert('Browser tidak mendukung geolocation.');
       return;
     }
 
     setIsGettingLocation(true);
-    setLocationError('');
 
     navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-        
+      async (pos) => {
+        const { latitude, longitude } = pos.coords;
         try {
-          // Try to get address from coordinates
           const response = await fetch(
             `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=id`
           );
           const data = await response.json();
-          
-          const locationString = data.locality 
-            ? `${data.locality}, ${data.city || data.principalSubdivision} (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`
+
+          const locationString = data.locality
+            ? `${data.locality}, ${data.city || data.principalSubdivision}`
             : `Lat: ${latitude.toFixed(4)}, Long: ${longitude.toFixed(4)}`;
-          
-          setFormData(prev => ({ 
-            ...prev, 
+
+          setFormData((prev) => ({
+            ...prev,
             location: locationString,
-            coordinates: { latitude, longitude }
+            coordinates: { latitude, longitude },
           }));
-        } catch (error) {
-          // If reverse geocoding fails, just use coordinates
-          setFormData(prev => ({ 
-            ...prev, 
-            location: `Lat: ${latitude.toFixed(4)}, Long: ${longitude.toFixed(4)}`,
-            coordinates: { latitude, longitude }
-          }));
+        } catch (err) {
+          console.error('Gagal mendapatkan alamat:', err);
+        } finally {
+          setIsGettingLocation(false);
         }
-        
-        setIsGettingLocation(false);
       },
-      (error) => {
-        console.error('Error getting location:', error);
-        setLocationError('Gagal mendapatkan lokasi. Pastikan izin lokasi diberikan.');
+      () => {
+        alert('Tidak dapat mendeteksi lokasi.');
         setIsGettingLocation(false);
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 60000
       }
     );
   };
 
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      // Check file size (max 5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        alert('Ukuran file maksimal 5MB!');
-        return;
-      }
+  // ===== CEK PRESENSI HARI INI =====
+  const checkIfAlreadyAttended = async (nim) => {
+    if (!nim) return;
+    const today = new Date().toISOString().split('T')[0];
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
 
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result);
-        setFormData(prev => ({ ...prev, image: reader.result }));
-      };
-      reader.readAsDataURL(file);
+    const { data, error } = await supabase
+      .from('attendances')
+      .select('*')
+      .eq('nim', nim)
+      .gte('created_at', today)
+      .lt('created_at', tomorrow.toISOString());
+
+    if (!error && data.length > 0) setHasAttendedToday(true);
+    else setHasAttendedToday(false);
+  };
+
+  useEffect(() => {
+    if (formData.nim.trim()) checkIfAlreadyAttended(formData.nim);
+  }, [formData.nim]);
+
+  // ===== UPLOAD GAMBAR KE SUPABASE =====
+  const uploadImageToSupabase = async (file) => {
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}_${Math.random()
+        .toString(36)
+        .substring(2)}.${fileExt}`;
+
+      // Upload ke bucket
+      const { error: uploadError } = await supabase.storage
+        .from('presensi-images')
+        .upload(fileName, file);
+
+      if (uploadError) throw uploadError;
+
+      // Ambil URL publik
+      const { data: publicData } = supabase.storage
+        .from('presensi-images')
+        .getPublicUrl(fileName);
+
+      return publicData.publicUrl;
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      throw error;
     }
   };
 
-  const handleSubmit = (e) => {
+  // ===== HANDLE SUBMIT =====
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.name.trim() || !formData.nim.trim()) {
-      alert('Nama dan NIM harus diisi!');
+    if (!formData.name || !formData.nim) {
+      alert('Nama dan NIM wajib diisi!');
       return;
     }
-    
-    const submissionData = {
-      ...formData,
-      timestamp: new Date().toLocaleString('id-ID'),
-      date: new Date().toISOString().split('T')[0]
+
+    if (hasAttendedToday) {
+      alert('❌ Anda sudah presensi hari ini!');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      let imageUrl = null;
+      if (formData.image) imageUrl = await uploadImageToSupabase(formData.image);
+
+      const { data, error } = await supabase
+        .from('attendances')
+        .insert([
+          {
+            name: formData.name,
+            nim: formData.nim,
+            kelas: formData.kelas,
+            location: formData.location,
+            coordinates: formData.coordinates,
+            image_url: imageUrl,
+            created_at: new Date().toISOString(),
+          },
+        ])
+        .select();
+
+      if (error) throw error;
+
+      alert('✅ Presensi berhasil disimpan!');
+      onAttendanceAdded?.(data[0]);
+
+      setFormData({
+        name: '',
+        nim: '',
+        kelas: 'A',
+        location: formData.location,
+        image: null,
+      });
+      setImagePreview(null);
+      setHasAttendedToday(true);
+    } catch (error) {
+      alert('❌ Gagal menyimpan presensi.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // ===== HANDLE FOTO =====
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Ukuran file maksimal 5MB');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setImagePreview(reader.result);
+      setFormData((prev) => ({ ...prev, image: file }));
     };
-    
-    onSubmit(submissionData);
-    
-    // Reset form but keep location
-    const currentLocation = formData.location;
-    setFormData({
-      name: '',
-      nim: '',
-      kelas: '',
-      location: currentLocation, // Keep location
-      department: '',
-      notes: '',
-      image: null
-    });
-    setImagePreview(null);
-    
-    alert('Presensi berhasil disimpan! ✅');
+    reader.readAsDataURL(file);
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Nama */}
+    <form onSubmit={handleSubmit} className="space-y-4">
+      {/* NAMA */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
-          <User className="w-4 h-4" />
+        <label className="block text-sm font-medium text-gray-700 mb-1">
           Nama Lengkap *
         </label>
         <input
           type="text"
           value={formData.name}
-          onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-          className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+          onChange={(e) =>
+            setFormData((prev) => ({ ...prev, name: e.target.value }))
+          }
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
           placeholder="Masukkan nama lengkap"
           required
         />
@@ -143,190 +203,110 @@ const AttendanceForm = ({ onSubmit }) => {
 
       {/* NIM */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
-          <IdCard className="w-4 h-4" />
+        <label className="block text-sm font-medium text-gray-700 mb-1">
           NIM *
         </label>
         <input
           type="text"
           value={formData.nim}
-          onChange={(e) => setFormData(prev => ({ ...prev, nim: e.target.value }))}
-          className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+          onChange={(e) =>
+            setFormData((prev) => ({ ...prev, nim: e.target.value }))
+          }
+          className={`w-full px-3 py-2 border rounded-lg focus:ring-2 ${
+            hasAttendedToday
+              ? 'border-red-300 bg-red-50'
+              : 'border-gray-300 focus:ring-blue-500'
+          }`}
           placeholder="Masukkan NIM"
           required
         />
+        {hasAttendedToday && (
+          <p className="text-red-500 text-xs mt-1">
+            ❌ Anda sudah presensi hari ini
+          </p>
+        )}
       </div>
 
-      {/* Kelas */}
+      {/* LOKASI */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
-          <Users className="w-4 h-4" />
-          Kelas *
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Lokasi
         </label>
-        <select
-          value={formData.kelas}
-          onChange={(e) => setFormData(prev => ({ ...prev, kelas: e.target.value }))}
-          className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-          required
-        >
-          <option value="">Pilih Kelas</option>
-          <option value="A">Kelas A</option>
-          <option value="B">Kelas B</option>
-          <option value="C">Kelas C</option>
-          <option value="D">Kelas D</option>
-          <option value="E">Kelas E</option>
-          <option value="F">Kelas F</option>
-        </select>
-      </div>
-
-      {/* Lokasi Otomatis */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
-          <MapPin className="w-4 h-4" />
-          Lokasi Presensi
-        </label>
-        
-        <div className="space-y-3">
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={formData.location || 'Mendeteksi lokasi...'}
-              readOnly
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl bg-gray-50"
-              placeholder="Tekan tombol untuk mendapatkan lokasi"
-            />
-            <button
-              type="button"
-              onClick={getCurrentLocation}
-              disabled={isGettingLocation}
-              className="px-4 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center gap-2"
-            >
-              <Navigation className={`w-4 h-4 ${isGettingLocation ? 'animate-spin' : ''}`} />
-              {isGettingLocation ? '...' : '📍'}
-            </button>
-          </div>
-          
-          {isGettingLocation && (
-            <p className="text-sm text-blue-600 flex items-center gap-2">
-              <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-              Mendeteksi lokasi...
-            </p>
-          )}
-          
-          {locationError && (
-            <p className="text-sm text-red-600">{locationError}</p>
-          )}
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={formData.location || 'Mendeteksi lokasi...'}
+            readOnly
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-sm"
+          />
+          <button
+            type="button"
+            onClick={getCurrentLocation}
+            disabled={isGettingLocation}
+            className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          >
+            <Navigation className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
-      {/* Upload Gambar Besar */}
+      {/* FOTO */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
-          <Camera className="w-4 h-4" />
-          Foto Presensi (Selfie/Bukti Kehadiran)
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Foto Presensi
         </label>
-        
         {imagePreview ? (
-          <div className="space-y-3 animate-fade-in">
-            <div className="relative">
-              <img 
-                src={imagePreview} 
-                alt="Preview" 
-                className="w-full h-64 object-cover rounded-xl border-4 border-green-500 shadow-lg"
-              />
-              <div className="absolute bottom-3 left-3 bg-black bg-opacity-50 text-white px-3 py-1 rounded-lg text-sm">
-                ✅ Foto siap diupload
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setImagePreview(null);
-                  setFormData(prev => ({ ...prev, image: null }));
-                }}
-                className="flex-1 bg-red-600 text-white py-2 px-4 rounded-lg font-medium hover:bg-red-700 transition-colors duration-200"
-              >
-                Hapus Foto
-              </button>
-              <label className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors duration-200 text-center cursor-pointer">
-                Ganti Foto
-                <input 
-                  type="file" 
-                  className="hidden" 
-                  accept="image/*"
-                  onChange={handleImageUpload}
-                  capture="environment"
-                />
-              </label>
-            </div>
+          <div className="space-y-2">
+            <img
+              src={imagePreview}
+              alt="Preview"
+              className="w-full h-40 object-cover rounded-lg border-2 border-green-500"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setImagePreview(null);
+                setFormData((prev) => ({ ...prev, image: null }));
+              }}
+              className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700"
+            >
+              Hapus Foto
+            </button>
           </div>
         ) : (
-          <label className="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-blue-500 transition-all duration-200 bg-gray-50 hover:bg-blue-50 group">
-            <div className="flex flex-col items-center justify-center pt-5 pb-6">
-              <Camera className="w-12 h-12 text-gray-400 mb-3 group-hover:text-blue-500 transition-colors duration-200" />
-              <p className="text-lg font-medium text-gray-600 mb-1">Ambil Foto</p>
-              <p className="text-sm text-gray-500 text-center">
-                Klik untuk mengambil foto selfie<br />
-                <span className="text-xs">atau upload dari galeri</span>
-              </p>
-            </div>
-            <input 
-              type="file" 
-              className="hidden" 
+          <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-500 bg-gray-50">
+            <Camera className="w-6 h-6 text-gray-400 mb-1" />
+            <p className="text-sm text-gray-500">Klik untuk upload foto</p>
+            <input
+              type="file"
+              className="hidden"
               accept="image/*"
               onChange={handleImageUpload}
               capture="environment"
             />
           </label>
         )}
-        
-        <p className="text-xs text-gray-500 mt-2">
-          📷 Disarankan selfie dengan wajah jelas dan background yang menunjukkan lokasi
-        </p>
       </div>
 
-      {/* Department/Optional */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Mata Kuliah / Program
-        </label>
-        <select
-          value={formData.department}
-          onChange={(e) => setFormData(prev => ({ ...prev, department: e.target.value }))}
-          className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-        >
-          <option value="">Pilih Mata Kuliah</option>
-          <option value="Pemrograman Web">Pemrograman Web</option>
-          <option value="Basis Data">Basis Data</option>
-          <option value="Algoritma">Algoritma</option>
-          <option value="Jaringan Komputer">Jaringan Komputer</option>
-          <option value="Mobile Development">Mobile Development</option>
-          <option value="Lainnya">Lainnya</option>
-        </select>
-      </div>
-
-      {/* Catatan */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Catatan / Keterangan Tambahan
-        </label>
-        <textarea
-          value={formData.notes}
-          onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-          rows="3"
-          className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-          placeholder="Contoh: Sakit, Izin, atau keterangan lain..."
-        />
-      </div>
-
-      {/* Submit Button */}
+      {/* BUTTON */}
       <button
         type="submit"
-        className="w-full bg-gradient-to-r from-green-600 to-blue-600 text-white py-4 px-6 rounded-xl font-semibold hover:from-green-700 hover:to-blue-700 transition-all duration-200 transform hover:scale-[1.02] shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-        disabled={!formData.name || !formData.nim || !formData.kelas}
+        disabled={
+          !formData.name || !formData.nim || isSubmitting || hasAttendedToday
+        }
+        className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
       >
-        📝 Simpan Presensi
+        {isSubmitting ? (
+          <>
+            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+            Menyimpan...
+          </>
+        ) : (
+          <>
+            <Upload className="w-4 h-4" />
+            Simpan Presensi
+          </>
+        )}
       </button>
     </form>
   );
