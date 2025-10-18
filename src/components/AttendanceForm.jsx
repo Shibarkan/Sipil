@@ -283,6 +283,7 @@ const AttendanceForm = ({ onAttendanceAdded }) => {
               accept="image/*"
               onChange={handleImageUpload}
               capture="environment"
+              required
             />
           </label>
         )}

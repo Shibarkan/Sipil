@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import AttendanceForm from './components/AttendanceForm';
 import AttendanceList from './components/AttendanceList';
 import PDFExportButton from './components/PDFExportButton';
+import SplashScreen from './components/SplashScreen'; // Import komponen baru
 import { Users, Calendar, Database, Clock } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
@@ -10,6 +11,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [todayAttendance, setTodayAttendance] = useState(null);
   const [userNIM, setUserNIM] = useState('');
+  const [showSplash, setShowSplash] = useState(true); // State untuk splash screen
 
   // Set tanggal hari ini
   const today = new Date().toISOString().split('T')[0];
@@ -87,11 +89,17 @@ function App() {
   };
 
   useEffect(() => {
+    // Sembunyikan splash screen setelah 2 detik
+    const splashTimer = setTimeout(() => {
+      setShowSplash(false);
+    }, 2000);
+
     fetchTodayAttendances();
     
     const subscription = setupRealtimeSubscription();
 
     return () => {
+      clearTimeout(splashTimer);
       subscription.unsubscribe();
     };
   }, [userNIM]);
@@ -114,83 +122,89 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-6 px-4">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="flex items-center justify-center gap-3 mb-3">
-            <div className="p-2 bg-blue-600 rounded-lg">
-              <Users className="text-white w-6 h-6" />
-            </div>
-            <h1 className="text-3xl font-bold text-gray-800">Digital Presensi</h1>
-          </div>
-          
-          {/* Today's Date */}
-          <div className="inline-flex items-center gap-2 bg-white px-4 py-2 rounded-lg shadow border border-gray-200 mb-4">
-            <Clock className="w-4 h-4 text-blue-600" />
-            <span className="text-sm font-medium text-gray-700">{getTodayDisplay()}</span>
-          </div>
-
-          <p className="text-gray-600">Presensi Kelasss A bosq</p>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Form Section */}
-          <div className="lg:col-span-1">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 sticky top-6">
-              <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                <Users className="w-5 h-5 text-blue-600" />
-                Form Presensi
-              </h2>
-              
-              {/* Attendance Status */}
-              {todayAttendance && userNIM && (
-                <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-                  <p className="text-green-800 text-sm font-medium">
-                    ✅ Sudah absen hari ini
-                  </p>
-                  <p className="text-green-700 text-xs">
-                    {new Date(todayAttendance.created_at).toLocaleTimeString('id-ID')}
-                  </p>
-                </div>
-              )}
-
-              <AttendanceForm onAttendanceAdded={handleAttendanceAdded} />
-            </div>
-          </div>
-
-          {/* List Section */}
-          <div className="lg:col-span-3">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-                <div>
-                  <h2 className="text-xl font-bold text-gray-800">Data Presensi Hari Ini</h2>
-                  {!isLoading && (
-                    <p className="text-gray-600 text-sm mt-1">
-                      {attendances.length} data ditemukan
-                    </p>
-                  )}
-                </div>
-                
-                <PDFExportButton 
-                  attendances={attendances} 
-                  filterDate={today}
-                />
+    <>
+      {/* Splash Screen */}
+      <SplashScreen isVisible={showSplash} />
+      
+      {/* Main App Content */}
+      <div className={`min-h-screen bg-gray-50 py-6 px-4 ${showSplash ? 'hidden' : 'block'}`}>
+        <div className="max-w-7xl mx-auto">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <div className="flex items-center justify-center gap-3 mb-3">
+              <div className="p-2 bg-blue-600 rounded-lg">
+                <Users className="text-white w-6 h-6" />
               </div>
+              <h1 className="text-3xl font-bold text-gray-800">Digital Presensi</h1>
+            </div>
+            
+            {/* Today's Date */}
+            <div className="inline-flex items-center gap-2 bg-white px-4 py-2 rounded-lg shadow border border-gray-200 mb-4">
+              <Clock className="w-4 h-4 text-blue-600" />
+              <span className="text-sm font-medium text-gray-700">{getTodayDisplay()}</span>
+            </div>
 
-              {isLoading ? (
-                <div className="text-center py-8">
-                  <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
-                  <p className="text-gray-600 text-sm">Memuat data presensi...</p>
+            <p className="text-gray-600">Presensi Kelas A</p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            {/* Form Section */}
+            <div className="lg:col-span-1">
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 sticky top-6">
+                <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                  <Users className="w-5 h-5 text-blue-600" />
+                  Form Presensi
+                </h2>
+                
+                {/* Attendance Status */}
+                {todayAttendance && userNIM && (
+                  <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <p className="text-green-800 text-sm font-medium">
+                      ✅ Sudah absen hari ini
+                    </p>
+                    <p className="text-green-700 text-xs">
+                      {new Date(todayAttendance.created_at).toLocaleTimeString('id-ID')}
+                    </p>
+                  </div>
+                )}
+
+                <AttendanceForm onAttendanceAdded={handleAttendanceAdded} />
+              </div>
+            </div>
+
+            {/* List Section */}
+            <div className="lg:col-span-3">
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-800">Data Presensi Hari Ini</h2>
+                    {!isLoading && (
+                      <p className="text-gray-600 text-sm mt-1">
+                        {attendances.length} data ditemukan
+                      </p>
+                    )}
+                  </div>
+                  
+                  <PDFExportButton 
+                    attendances={attendances} 
+                    filterDate={today}
+                  />
                 </div>
-              ) : (
-                <AttendanceList attendances={attendances} />
-              )}
+
+                {isLoading ? (
+                  <div className="text-center py-8">
+                    <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+                    <p className="text-gray-600 text-sm">Memuat data presensi...</p>
+                  </div>
+                ) : (
+                  <AttendanceList attendances={attendances} />
+                )}
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
