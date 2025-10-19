@@ -149,7 +149,7 @@ function App() {
               <span className="text-sm font-medium text-gray-700">{getTodayDisplay()}</span>
             </div>
 
-            <p className="text-gray-600">Presensi Kelas A - Dies Natalis Teknik Sipil</p>
+            <p className="text-gray-600">Presensi Kelas A</p>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
