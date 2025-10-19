@@ -1,224 +1,148 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Camera, Upload, Navigation, X } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Camera, Upload } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 const AttendanceForm = ({ onAttendanceAdded }) => {
   const [formData, setFormData] = useState({
     name: '',
     nim: '',
+    asal: '',
     kelas: 'A',
-    location: '',
-    image: null,
-    coordinates: null,
   });
 
-  const [imagePreview, setImagePreview] = useState(null);
-  const [isGettingLocation, setIsGettingLocation] = useState(false);
+  const [photoFile, setPhotoFile] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const [kegiatan, setKegiatan] = useState('chant'); // chant atau dies
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [hasAttendedToday, setHasAttendedToday] = useState(false);
-  const [isCameraActive, setIsCameraActive] = useState(false);
+
+  // Camera refs
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const [isCameraActive, setIsCameraActive] = useState(false);
 
-  // === AUTO-DETECT LOKASI ===
-  useEffect(() => {
-    getCurrentLocation();
-  }, []);
-
-  const getCurrentLocation = () => {
-    if (!navigator.geolocation) {
-      alert('Browser tidak mendukung geolocation.');
-      return;
-    }
-
-    setIsGettingLocation(true);
-
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const { latitude, longitude } = pos.coords;
-        try {
-          const response = await fetch(
-            `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=id`
-          );
-          const data = await response.json();
-
-          const locationString = data.locality
-            ? `${data.locality}, ${data.city || data.principalSubdivision}`
-            : `Lat: ${latitude.toFixed(4)}, Long: ${longitude.toFixed(4)}`;
-
-          setFormData((prev) => ({
-            ...prev,
-            location: locationString,
-            coordinates: { latitude, longitude },
-          }));
-        } catch (err) {
-          console.error('Gagal mendapatkan alamat:', err);
-        } finally {
-          setIsGettingLocation(false);
-        }
-      },
-      () => {
-        alert('Tidak dapat mendeteksi lokasi.');
-        setIsGettingLocation(false);
-      }
-    );
-  };
-
-  // === CEK PRESENSI HARI INI ===
-  const checkIfAlreadyAttended = async (nim) => {
-    if (!nim) return;
-    const today = new Date().toISOString().split('T')[0];
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
-    const { data, error } = await supabase
-      .from('attendances')
-      .select('*')
-      .eq('nim', nim)
-      .gte('created_at', today)
-      .lt('created_at', tomorrow.toISOString());
-
-    if (!error && data.length > 0) setHasAttendedToday(true);
-    else setHasAttendedToday(false);
-  };
-
-  useEffect(() => {
-    if (formData.nim.trim()) checkIfAlreadyAttended(formData.nim);
-  }, [formData.nim]);
-
-  // === UPLOAD GAMBAR KE SUPABASE ===
+  // Upload foto ke Supabase
   const uploadImageToSupabase = async (file) => {
-    try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Date.now()}_${Math.random()
-        .toString(36)
-        .substring(2)}.${fileExt}`;
+    if (!file) return null;
+    const ext = file.name.split('.').pop();
+    const fileName = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+    const { error } = await supabase.storage
+      .from('presensi-images')
+      .upload(fileName, file, { cacheControl: '3600', upsert: true });
+    if (error) throw error;
 
-      const { error: uploadError } = await supabase.storage
-        .from('presensi-images')
-        .upload(fileName, file);
-
-      if (uploadError) throw uploadError;
-
-      const { data: publicData } = supabase.storage
-        .from('presensi-images')
-        .getPublicUrl(fileName);
-
-      return publicData.publicUrl;
-    } catch (error) {
-      console.error('Error uploading image:', error);
-      throw error;
-    }
+    const { data } = supabase.storage.from('presensi-images').getPublicUrl(fileName);
+    return data.publicUrl;
   };
 
-  // === HANDLE FOTO DARI FILE ===
+  // Handle upload file
   const handleImageUpload = (e) => {
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 5 * 1024 * 1024) {
       alert('Ukuran file maksimal 5MB');
       return;
     }
-
+    setPhotoFile(file);
     const reader = new FileReader();
-    reader.onloadend = () => {
-      setImagePreview(reader.result);
-      setFormData((prev) => ({ ...prev, image: file }));
-    };
+    reader.onloadend = () => setPhotoPreview(reader.result);
     reader.readAsDataURL(file);
   };
 
-  // === AKTIFKAN KAMERA SELFIE ===
+  // Camera
   const startCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user' },
-      });
-      videoRef.current.srcObject = stream;
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+      if (videoRef.current) videoRef.current.srcObject = stream;
       setIsCameraActive(true);
-    } catch (error) {
-      alert('Tidak dapat mengakses kamera');
+    } catch {
+      alert('Tidak dapat mengakses kamera.');
     }
   };
 
-  // === AMBIL FOTO DARI KAMERA ===
   const capturePhoto = () => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    const context = canvas.getContext('2d');
+    if (!video || !canvas) return;
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     canvas.toBlob((blob) => {
-      const file = new File([blob], `photo_${Date.now()}.jpg`, {
-        type: 'image/jpeg',
-      });
-      const imageUrl = URL.createObjectURL(blob);
-      setImagePreview(imageUrl);
-      setFormData((prev) => ({ ...prev, image: file }));
-
+      if (!blob) return;
+      const file = new File([blob], `photo_${Date.now()}.jpg`, { type: 'image/jpeg' });
+      setPhotoFile(file);
+      setPhotoPreview(URL.createObjectURL(blob));
       stopCamera();
-    }, 'image/jpeg');
+    });
   };
 
-  // === MATIKAN KAMERA ===
   const stopCamera = () => {
     const stream = videoRef.current?.srcObject;
-    if (stream) {
-      stream.getTracks().forEach((track) => track.stop());
-    }
+    if (stream) stream.getTracks().forEach((t) => t.stop());
     setIsCameraActive(false);
   };
 
-  // === HANDLE SUBMIT ===
+  // Submit form
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.name || !formData.nim) {
-      alert('Nama dan NIM wajib diisi!');
+    if (!formData.name || !formData.nim || !formData.asal) {
+      alert('Nama, NIM, dan Asal wajib diisi!');
       return;
     }
-
-    if (hasAttendedToday) {
-      alert('❌ Anda sudah presensi hari ini!');
+    if (!photoFile) {
+      alert('Silakan upload/ambil foto terlebih dahulu!');
       return;
     }
 
     setIsSubmitting(true);
-
     try {
-      let imageUrl = null;
-      if (formData.image) imageUrl = await uploadImageToSupabase(formData.image);
+      const uploadedUrl = await uploadImageToSupabase(photoFile);
 
-      const { data, error } = await supabase
+      // Cek apakah mahasiswa sudah absen untuk kegiatan hari ini
+      const { data: existing, error: fetchError } = await supabase
         .from('attendances')
-        .insert([
-          {
-            name: formData.name,
-            nim: formData.nim,
-            kelas: formData.kelas,
-            location: formData.location,
-            coordinates: formData.coordinates,
-            image_url: imageUrl,
-            created_at: new Date().toISOString(),
-          },
-        ])
-        .select();
+        .select('*')
+        .eq('nim', formData.nim.trim())
+        .maybeSingle();
 
-      if (error) throw error;
+      if (fetchError) throw fetchError;
 
-      alert('✅ Presensi berhasil disimpan!');
-      onAttendanceAdded?.(data[0]);
-      setFormData({
-        name: '',
-        nim: '',
-        kelas: 'A',
-        location: formData.location,
-        image: null,
-      });
-      setImagePreview(null);
-      setHasAttendedToday(true);
-    } catch (error) {
+      const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+
+      if (existing && new Date(existing.created_at).toISOString().slice(0, 10) === today) {
+        // Mahasiswa sudah ada hari ini → update foto sesuai kegiatan
+        const updateData = kegiatan === 'chant' ? { foto_ch: uploadedUrl } : { foto_dies: uploadedUrl };
+        const { error: updateError } = await supabase
+          .from('attendances')
+          .update(updateData)
+          .eq('id', existing.id);
+        if (updateError) throw updateError;
+
+        alert(`✅ Presensi ${kegiatan === 'chant' ? 'Chant Class' : 'Dies Natalis'} berhasil diupdate!`);
+        onAttendanceAdded?.({ ...existing, ...updateData });
+      } else {
+        // Buat data baru
+        const insertData = {
+          name: formData.name,
+          nim: formData.nim,
+          asal: formData.asal,
+          kelas: formData.kelas,
+          ...(kegiatan === 'chant' ? { foto_ch: uploadedUrl } : { foto_dies: uploadedUrl }),
+        };
+        const { data: newData, error: insertError } = await supabase.from('attendances').insert([insertData]).select();
+        if (insertError) throw insertError;
+
+        alert('✅ Presensi berhasil disimpan!');
+        onAttendanceAdded?.(newData[0]);
+      }
+
+      // Reset form
+      setFormData({ name: '', nim: '', asal: '', kelas: 'A' });
+      setPhotoFile(null);
+      setPhotoPreview(null);
+      setKegiatan('chant');
+    } catch (err) {
+      console.error(err);
       alert('❌ Gagal menyimpan presensi.');
     } finally {
       setIsSubmitting(false);
@@ -227,139 +151,96 @@ const AttendanceForm = ({ onAttendanceAdded }) => {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {/* NAMA */}
+      {/* Nama */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Nama Lengkap *
-        </label>
+        <label className="block text-sm font-medium">Nama Lengkap *</label>
         <input
           type="text"
           value={formData.name}
-          onChange={(e) =>
-            setFormData((prev) => ({ ...prev, name: e.target.value }))
-          }
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-          placeholder="Masukkan nama lengkap"
+          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+          className="w-full px-3 py-2 border rounded-lg"
           required
         />
       </div>
 
       {/* NIM */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          NIM *
-        </label>
+        <label className="block text-sm font-medium">NIM *</label>
         <input
           type="text"
           value={formData.nim}
-          onChange={(e) =>
-            setFormData((prev) => ({ ...prev, nim: e.target.value }))
-          }
-          className={`w-full px-3 py-2 border rounded-lg focus:ring-2 ${
-            hasAttendedToday
-              ? 'border-red-300 bg-red-50'
-              : 'border-gray-300 focus:ring-blue-500'
-          }`}
-          placeholder="Masukkan NIM"
+          onChange={(e) => setFormData({ ...formData, nim: e.target.value })}
+          className="w-full px-3 py-2 border rounded-lg"
           required
         />
-        {hasAttendedToday && (
-          <p className="text-red-500 text-xs mt-1">
-            ❌ Anda sudah presensi hari ini
-          </p>
-        )}
       </div>
 
-      {/* LOKASI */}
+      {/* Asal */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Lokasi
-        </label>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={formData.location || 'Mendeteksi lokasi...'}
-            readOnly
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-sm"
-          />
-          <button
-            type="button"
-            onClick={getCurrentLocation}
-            disabled={isGettingLocation}
-            className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-          >
-            <Navigation className="w-4 h-4" />
-          </button>
-        </div>
+        <label className="block text-sm font-medium">Asal Daerah *</label>
+        <input
+          type="text"
+          value={formData.asal}
+          onChange={(e) => setFormData({ ...formData, asal: e.target.value })}
+          className="w-full px-3 py-2 border rounded-lg"
+          required
+        />
       </div>
 
-      {/* FOTO */}
+      {/* Kelas */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Foto Presensi
-        </label>
+        <label className="block text-sm font-medium">Kelas</label>
+        <input
+          type="text"
+          value={formData.kelas}
+          readOnly
+          className="w-full px-3 py-2 border bg-gray-100 rounded-lg"
+        />
+      </div>
 
-        {imagePreview ? (
+      {/* Upload / Camera */}
+      <div>
+        <label className="block text-sm font-medium mb-1">📸 Foto Bukti</label>
+        {photoPreview ? (
           <div className="space-y-2">
-            <img
-              src={imagePreview}
-              alt="Preview"
-              className="w-full h-40 object-cover rounded-lg border-2 border-green-500"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                setImagePreview(null);
-                setFormData((prev) => ({ ...prev, image: null }));
-              }}
-              className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700"
-            >
-              Hapus Foto
-            </button>
-          </div>
-        ) : isCameraActive ? (
-          <div className="space-y-2">
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              className="w-full h-40 rounded-lg bg-black object-cover"
-            />
-            <canvas ref={canvasRef} className="hidden"></canvas>
+            <img src={photoPreview} alt="Preview" className="w-full h-40 object-cover rounded-lg border" />
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={capturePhoto}
-                className="flex-1 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700"
+                onClick={() => {
+                  setPhotoFile(null);
+                  setPhotoPreview(null);
+                }}
+                className="flex-1 bg-red-600 text-white py-2 rounded-lg"
               >
+                Hapus Foto
+              </button>
+              <button type="button" onClick={startCamera} className="flex-1 bg-gray-200 py-2 rounded-lg">
+                Ambil Ulang
+              </button>
+            </div>
+          </div>
+        ) : isCameraActive ? (
+          <div className="space-y-2">
+            <video ref={videoRef} autoPlay playsInline className="w-full h-40 rounded-lg bg-black" />
+            <canvas ref={canvasRef} className="hidden" />
+            <div className="flex gap-2">
+              <button type="button" onClick={capturePhoto} className="flex-1 bg-green-600 text-white py-2 rounded-lg">
                 Ambil Foto
               </button>
-              <button
-                type="button"
-                onClick={stopCamera}
-                className="flex-1 bg-gray-400 text-white py-2 rounded-lg hover:bg-gray-500"
-              >
+              <button type="button" onClick={stopCamera} className="flex-1 bg-gray-400 text-white py-2 rounded-lg">
                 Batal
               </button>
             </div>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-2">
-            <label className="flex flex-col items-center justify-center h-24 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-500 bg-gray-50">
+            <label className="flex flex-col items-center justify-center h-24 border-2 border-dashed rounded-lg cursor-pointer bg-gray-50">
               <Upload className="w-6 h-6 text-gray-400 mb-1" />
               <p className="text-sm text-gray-500">Upload Foto</p>
-              <input
-                type="file"
-                className="hidden"
-                accept="image/*"
-                onChange={handleImageUpload}
-              />
+              <input type="file" className="hidden" accept="image/*" onChange={handleImageUpload} />
             </label>
-            <button
-              type="button"
-              onClick={startCamera}
-              className="flex flex-col items-center justify-center h-24 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-500 bg-gray-50"
-            >
+            <button type="button" onClick={startCamera} className="flex flex-col items-center justify-center h-24 border-2 border-dashed rounded-lg bg-gray-50">
               <Camera className="w-6 h-6 text-gray-400 mb-1" />
               <p className="text-sm text-gray-500">Ambil Selfie</p>
             </button>
@@ -367,23 +248,23 @@ const AttendanceForm = ({ onAttendanceAdded }) => {
         )}
       </div>
 
-      {/* BUTTON SUBMIT */}
-      <button
-        type="submit"
-        disabled={!formData.name || !formData.nim || isSubmitting || hasAttendedToday}
-        className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
-      >
-        {isSubmitting ? (
-          <>
-            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-            Menyimpan...
-          </>
-        ) : (
-          <>
-            <Upload className="w-4 h-4" />
-            Simpan Presensi
-          </>
-        )}
+      {/* Kegiatan */}
+      <div>
+        <label className="block text-sm font-medium mb-1">Kegiatan *</label>
+        <div className="flex gap-4">
+          <label className="flex items-center gap-2">
+            <input type="radio" name="kegiatan" value="chant" checked={kegiatan === 'chant'} onChange={() => setKegiatan('chant')} />
+            <span>Chant Class (CH)</span>
+          </label>
+          <label className="flex items-center gap-2">
+            <input type="radio" name="kegiatan" value="dies" checked={kegiatan === 'dies'} onChange={() => setKegiatan('dies')} />
+            <span>Dies Natalis</span>
+          </label>
+        </div>
+      </div>
+
+      <button type="submit" disabled={isSubmitting} className="w-full bg-blue-600 text-white py-3 rounded-lg">
+        {isSubmitting ? 'Menyimpan...' : 'Simpan Presensi'}
       </button>
     </form>
   );

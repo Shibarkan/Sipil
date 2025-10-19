@@ -1,18 +1,18 @@
 import React, { useState } from 'react';
 import { Download, Loader2 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import toast from 'react-hot-toast';
 
 const PDFExportButton = ({ attendances, filterDate }) => {
   const [isGenerating, setIsGenerating] = useState(false);
-  const [progress, setProgress] = useState(0);
 
-  // === Fungsi ambil gambar Supabase ke Base64 aman (tanpa CORS error) ===
   const toDataURL = (url) => {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
+      if (!url) return resolve(null);
       const img = new Image();
-      img.crossOrigin = 'anonymous'; // penting
-      img.src = `${url}?t=${Date.now()}`; // cache-buster biar selalu fresh
-
+      img.crossOrigin = 'anonymous';
+      img.src = `${url}?t=${Date.now()}`;
       img.onload = () => {
         try {
           const canvas = document.createElement('canvas');
@@ -20,83 +20,87 @@ const PDFExportButton = ({ attendances, filterDate }) => {
           canvas.height = img.height;
           const ctx = canvas.getContext('2d');
           ctx.drawImage(img, 0, 0);
-          resolve(canvas.toDataURL('image/jpeg', 0.8));
-        } catch (err) {
-          reject(err);
+          resolve(canvas.toDataURL('image/jpeg', 0.7));
+        } catch {
+          resolve(null);
         }
       };
-
-      img.onerror = () => reject('Gagal load gambar dari Supabase');
+      img.onerror = () => resolve(null);
     });
   };
 
   const generatePDF = async () => {
-    if (attendances.length === 0) {
-      alert('Tidak ada data untuk diexport!');
+    if (!attendances || attendances.length === 0) {
+      toast.error('Tidak ada data untuk diexport!');
       return;
     }
 
     setIsGenerating(true);
-    setProgress(0);
+    const loadingToast = toast.loading('Sedang membuat PDF...');
 
     try {
-      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdf = new jsPDF('l', 'mm', 'a4');
       const pageWidth = pdf.internal.pageSize.getWidth();
-      let y = 20;
 
       // Header
-      pdf.setFontSize(18);
-      pdf.setTextColor(44, 62, 80);
-      pdf.text('LAPORAN PRESENSI DIGITAL', pageWidth / 2, y, { align: 'center' });
-      y += 8;
-      pdf.setFontSize(11);
-      pdf.setTextColor(100);
-      pdf.text(`Periode: ${filterDate || 'Semua Data'}`, pageWidth / 2, y, { align: 'center' });
-      y += 10;
+      pdf.setFontSize(20);
+      pdf.text('LAPORAN PRESENSI DIGITAL', pageWidth / 2, 15, { align: 'center' });
+      pdf.setFontSize(12);
+      pdf.text(`Periode: ${filterDate || 'Semua Data'}`, pageWidth / 2, 22, { align: 'center' });
+      pdf.setFontSize(10);
+      pdf.text(`Generated: ${new Date().toLocaleString('id-ID')}`, pageWidth / 2, 28, { align: 'center' });
 
-      for (let i = 0; i < attendances.length; i++) {
-        const a = attendances[i];
-        setProgress(Math.round(((i + 1) / attendances.length) * 100));
+      // Body
+      const tableBody = attendances.map((a, i) => [
+        i + 1,
+        a.name || '-',
+        a.nim || '-',
+        a.kelas || '-',
+        a.asal || '-',
+        '',
+        ''
+      ]);
 
-        // Buat halaman baru kalau terlalu panjang
-        if (y > 250) {
-          pdf.addPage();
-          y = 20;
-        }
+      const imagesCH = await Promise.all(attendances.map(a => toDataURL(a.foto_ch)));
+      const imagesDies = await Promise.all(attendances.map(a => toDataURL(a.foto_dies)));
 
-        pdf.setDrawColor(230);
-        pdf.setFillColor(245, 245, 245);
-        pdf.rect(15, y, 180, 60, 'F'); // background kotak data
+      autoTable(pdf, {
+        startY: 35,
+        head: [['NO', 'NAMA', 'NIM', 'KELAS', 'ASAL', 'CH', 'Dies Natalis']],
+        body: tableBody,
+        theme: 'grid',
+        styles: { fontSize: 9, cellPadding: 2, minCellHeight: 42 },
+        columnStyles: {
+          0: { cellWidth: 10 },
+          1: { cellWidth: 35 },
+          2: { cellWidth: 25 },
+          3: { cellWidth: 20 },
+          4: { cellWidth: 35 },
+          5: { cellWidth: 30 },
+          6: { cellWidth: 30 }
+        },
+        didDrawCell: (data) => {
+          if (data.section !== 'body') return;
+          const rowIndex = data.row.index;
 
-        // Nama & Info Dasar
-        pdf.setTextColor(33, 33, 33);
-        pdf.setFontSize(12);
-        pdf.text(`${a.name || '-'}`, 20, y + 10);
-        pdf.setFontSize(9);
-        pdf.text(`NIM: ${a.nim || '-'}`, 20, y + 16);
-        pdf.text(`Kelas: ${a.kelas || '-'}`, 20, y + 22);
-        pdf.text(`Lokasi: ${a.location || '-'}`, 20, y + 28);
+          const drawImageFit = (imgBase64) => {
+            if (!imgBase64) return;
+            const cellWidth = data.cell.width;
+            const cellHeight = data.cell.height;
+            const targetW = 30;
+            const targetH = 40;
+            const scale = Math.min(cellWidth / targetW, cellHeight / targetH);
+            const w = targetW * scale;
+            const h = targetH * scale;
+            const x = data.cell.x + (cellWidth - w) / 2;
+            const y = data.cell.y + (cellHeight - h) / 2;
+            pdf.addImage(imgBase64, 'JPEG', x, y, w, h);
+          };
 
-        const waktu = new Date(a.created_at).toLocaleString('id-ID');
-        pdf.text(`Waktu: ${waktu}`, 20, y + 34);
-
-        // Gambar
-        if (a.image_url) {
-          try {
-            const imgData = await toDataURL(a.image_url);
-            pdf.addImage(imgData, 'JPEG', 135, y + 5, 50, 50);
-          } catch (err) {
-            console.warn(err);
-            pdf.setTextColor(200, 0, 0);
-            pdf.text('Foto gagal dimuat', 135, y + 20);
-          }
-        } else {
-          pdf.setTextColor(150);
-          pdf.text('(Tidak ada foto)', 135, y + 20);
-        }
-
-        y += 70;
-      }
+          if (data.column.index === 5) drawImageFit(imagesCH[rowIndex]);
+          if (data.column.index === 6) drawImageFit(imagesDies[rowIndex]);
+        },
+      });
 
       // Footer
       const pageCount = pdf.internal.getNumberOfPages();
@@ -104,24 +108,16 @@ const PDFExportButton = ({ attendances, filterDate }) => {
         pdf.setPage(i);
         pdf.setFontSize(8);
         pdf.setTextColor(120);
-        pdf.text(
-          `Halaman ${i} dari ${pageCount} • Generated ${new Date().toLocaleString('id-ID')}`,
-          pageWidth / 2,
-          290,
-          { align: 'center' }
-        );
+        pdf.text(`Halaman ${i} dari ${pageCount}`, pageWidth / 2, pdf.internal.pageSize.getHeight() - 5, { align: 'center' });
       }
 
-      // Simpan PDF
-      const fileName = `presensi_${filterDate || 'semua'}_${Date.now()}.pdf`;
-      pdf.save(fileName);
-      alert('✅ PDF berhasil dibuat!');
+      pdf.save(`presensi_${filterDate || 'semua'}_${Date.now()}.pdf`);
+      toast.success('PDF berhasil dibuat!', { id: loadingToast });
     } catch (err) {
       console.error(err);
-      alert('❌ Gagal membuat PDF');
+      toast.error('Gagal membuat PDF', { id: loadingToast });
     } finally {
       setIsGenerating(false);
-      setProgress(0);
     }
   };
 
@@ -138,7 +134,7 @@ const PDFExportButton = ({ attendances, filterDate }) => {
       {isGenerating ? (
         <>
           <Loader2 className="w-4 h-4 animate-spin" />
-          Membuat PDF... {progress}%
+          Membuat PDF...
         </>
       ) : (
         <>

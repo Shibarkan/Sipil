@@ -1,15 +1,16 @@
+// src/components/AttendanceList.jsx
 import React from 'react';
-import { User, MapPin, Calendar, Clock, IdCard, Users } from 'lucide-react';
+import { User, MapPin, Calendar, Clock, IdCard, Users, Map } from 'lucide-react';
 
 const AttendanceList = ({ attendances }) => {
-  // Urutkan berdasarkan NIM (3 digit terakhir)
+  // Urutkan berdasarkan NIM (3 digit terakhir) dengan guard
   const sortedAttendances = [...attendances].sort((a, b) => {
-    const nimA = a.nim.slice(-3);
-    const nimB = b.nim.slice(-3);
+    const nimA = a.nim ? a.nim.slice(-3) : '';
+    const nimB = b.nim ? b.nim.slice(-3) : '';
     return nimA.localeCompare(nimB);
   });
 
-  if (sortedAttendances.length === 0) {
+  if (!sortedAttendances || sortedAttendances.length === 0) {
     return (
       <div className="text-center py-12">
         <div className="text-gray-400 mb-4">
@@ -21,152 +22,133 @@ const AttendanceList = ({ attendances }) => {
     );
   }
 
-  // Function untuk format waktu
   const formatTime = (dateString) => {
+    if (!dateString) return '-';
     const date = new Date(dateString);
-    return date.toLocaleTimeString('id-ID', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    });
+    return date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   };
 
-  // Function untuk format tanggal
   const formatDate = (dateString) => {
+    if (!dateString) return '-';
     const date = new Date(dateString);
-    return date.toLocaleDateString('id-ID', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric'
-    });
+    return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
   };
 
-  // Function untuk get 3 digit terakhir NIM
-  const getLastThreeNIM = (nim) => {
-    return nim.slice(-3);
-  };
+  const getLastThreeNIM = (nim) => (nim ? nim.slice(-3) : '--');
 
   return (
     <div className="space-y-4">
-      {/* Summary */}
+      {/* Header Total Presensi */}
       <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg p-4 text-white">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="font-bold text-lg">Ringkasan Presensi Hari Ini</h3>
-            <p className="text-blue-100">
-              Total {sortedAttendances.length} mahasiswa • Urut berdasarkan NIM
-            </p>
+            <h3 className="font-bold text-lg">Total Presensi Hari Ini</h3>
+            <p className="text-blue-100">{sortedAttendances.length} mahasiswa</p>
           </div>
           <div className="text-right">
-            <div className="text-2xl font-bold">{sortedAttendances.length}</div>
-            <div className="text-blue-100 text-sm">Hadir</div>
+            <p className="text-sm">Update terakhir</p>
+            <p className="font-medium">{new Date().toLocaleTimeString('id-ID')}</p>
           </div>
         </div>
       </div>
 
-      {/* Attendance Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+      {/* List Mahasiswa */}
+      <div className="grid gap-4">
         {sortedAttendances.map((attendance, index) => (
-          <div 
-            key={attendance.id} 
-            className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-lg transition-all duration-300 hover:border-blue-300"
+          <div
+            key={attendance.id || index}
+            className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
           >
-            {/* Foto Besar - Full Width */}
-            <div className="mb-4">
-              {attendance.image_url ? (
-                <div className="w-full h-48 rounded-xl overflow-hidden border-4 border-green-500 shadow-md">
-                  <img 
-                    src={attendance.image_url} 
-                    alt={`Presensi ${attendance.name}`}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-              ) : (
-                <div className="w-full h-48 bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl flex flex-col items-center justify-center border-4 border-gray-300 shadow-md">
-                  <User className="w-16 h-16 text-gray-400 mb-2" />
-                  <span className="text-gray-500 text-sm font-medium">Tidak ada foto</span>
-                </div>
-              )}
-            </div>
-
-            {/* Header dengan Nama dan NIM */}
-            <div className="flex items-start justify-between mb-3">
-              <div className="flex-1">
-                <h3 className="font-bold text-gray-800 text-xl mb-1">{attendance.name}</h3>
-                <div className="flex items-center gap-2">
-                  <IdCard className="w-4 h-4 text-gray-500" />
-                  <span className="text-sm text-gray-600 font-mono">{attendance.nim}</span>
-                </div>
-              </div>
-              
-              {/* Badge Nomor NIM */}
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shadow-lg">
-                <span className="text-white font-bold text-sm">
-                  #{getLastThreeNIM(attendance.nim)}
-                </span>
-              </div>
-            </div>
-
-            {/* Badge Kelas */}
-            <div className="mb-4">
-              <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium bg-green-100 text-green-800 border border-green-200">
-                <Users className="w-4 h-4" />
-                Kelas {attendance.kelas}
-              </span>
-            </div>
-
-            {/* Detail Information */}
-            <div className="space-y-3">
-              {/* Lokasi */}
-              {attendance.location && (
-                <div className="flex items-start gap-3 bg-blue-50 rounded-lg p-3">
-                  <MapPin className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-gray-700 mb-1">📍 Lokasi Presensi</p>
-                    <p className="text-sm text-gray-600 leading-relaxed">
-                      {attendance.location}
-                    </p>
+            <div className="flex items-start justify-between">
+              <div className="flex items-start space-x-4 flex-1">
+                {/* Avatar / NIM */}
+                <div className="flex-shrink-0">
+                  <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                    {getLastThreeNIM(attendance.nim)}
                   </div>
                 </div>
-              )}
 
-              {/* Tanggal & Waktu */}
-              <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-purple-500" />
-                  <span className="text-sm text-gray-700 font-medium">{formatDate(attendance.created_at)}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-orange-500" />
-                  <span className="text-sm text-gray-700 font-medium">{formatTime(attendance.created_at)}</span>
+                <div className="flex-1 min-w-0">
+                  {/* Nama & Kelas */}
+                  <div className="flex items-center justify-between mb-1">
+                    <h3 className="font-semibold text-gray-900 text-lg truncate">{attendance.name}</h3>
+                    <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full font-medium">{attendance.kelas}</span>
+                  </div>
+
+                  {/* Status Kegiatan */}
+                  <div className="flex items-center gap-2 mb-2">
+                    {attendance.foto_ch && (
+                      <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full font-medium">Sudah CH</span>
+                    )}
+                    {attendance.foto_dies && (
+                      <span className="bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded-full font-medium">Sudah Dies</span>
+                    )}
+                  </div>
+
+                  {/* Detail Info */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+                    <div className="flex items-center gap-2 text-gray-600">
+                      <IdCard className="w-4 h-4 text-blue-500" />
+                      <span>NIM: {attendance.nim || '-'}</span>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-gray-600">
+                      <Map className="w-4 h-4 text-green-500" />
+                      <span>Asal: {attendance.asal || '-'}</span>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-gray-600">
+                      <MapPin className="w-4 h-4 text-red-500" />
+                      <span className="truncate">{attendance.location || 'Lokasi tidak tersedia'}</span>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-gray-600">
+                      <Clock className="w-4 h-4 text-purple-500" />
+                      <span>{formatTime(attendance.created_at)}</span>
+                    </div>
+                  </div>
+
+                  {/* Foto Kegiatan */}
+                  <div className="flex gap-3 mt-3">
+                    {attendance.foto_ch && (
+                      <div className="text-center">
+                        <img
+                          src={attendance.foto_ch}
+                          alt="Chant Class"
+                          className="w-16 h-16 object-cover rounded-lg border-2 border-green-500"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Chant Class</p>
+                      </div>
+                    )}
+                    {attendance.foto_dies && (
+                      <div className="text-center">
+                        <img
+                          src={attendance.foto_dies}
+                          alt="Dies Natalis"
+                          className="w-16 h-16 object-cover rounded-lg border-2 border-purple-500"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Dies Natalis</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Status Bar */}
-            <div className="mt-4 pt-4 border-t border-gray-200">
-              <div className="flex items-center justify-between">
-                <span className="inline-flex items-center gap-2 px-3 py-2 rounded-full text-sm font-medium bg-blue-100 text-blue-800 border border-blue-200">
-                  <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
-                  ✅ Hadir Tercatat
-                </span>
-                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                  Urutan #{index + 1}
-                </span>
+              {/* Tanggal / Jam */}
+              <div className="flex-shrink-0 text-right">
+                <div className="bg-gray-50 rounded-lg px-3 py-2">
+                  <div className="flex items-center gap-1 text-gray-500 text-sm">
+                    <Calendar className="w-3 h-3" />
+                    {formatDate(attendance.created_at)}
+                  </div>
+                  <div className="text-xs text-gray-400 mt-1">
+                    {new Date(attendance.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         ))}
-      </div>
-
-      {/* Footer dengan info sorting */}
-      <div className="text-center py-6">
-        <div className="inline-flex items-center gap-3 bg-gradient-to-r from-blue-50 to-indigo-50 px-6 py-3 rounded-full border border-blue-200">
-          <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-          <p className="text-sm text-gray-700 font-medium">
-            Menampilkan {sortedAttendances.length} presensi • Diurutkan berdasarkan 3 digit terakhir NIM
-          </p>
-        </div>
       </div>
     </div>
   );
