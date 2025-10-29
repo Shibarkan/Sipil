@@ -62,52 +62,122 @@ const PDFExportButton = ({ attendances, filterDate }) => {
         a.nim || '-',
         a.kelas || '-',
         a.asal || '-',
-        '' // kolom gambar CH
+        ''
       ]);
 
       const imagesCH = await Promise.all(sortedAttendances.map(a => toDataURL(a.foto_ch)));
 
-      // ===== SETTING TABEL DAN GAMBAR =====
+      // ===== SETTING TABEL =====
       const imageWidth = 30; // mm
       const imageHeight = 40; // mm
 
-      autoTable(pdf, {
-        startY: 35,
-        head: [['NO', 'NAMA', 'NIM', 'KELAS', 'ASAL', 'FOTO PRESENSI']],
-        body: tableBody,
-        theme: 'grid',
-        styles: { fontSize: 9, cellPadding: 2, minCellHeight: imageHeight + 4 },
-        columnStyles: {
-          0: { cellWidth: 10 },
-          1: { cellWidth: 40 },
-          2: { cellWidth: 35 },
-          3: { cellWidth: 25 },
-          4: { cellWidth: 40 },
-          5: { cellWidth: imageWidth + 5 },
-        },
-        showHead: 'firstPage', // ✅ header hanya di halaman pertama
-        didDrawCell: (data) => {
-          if (data.section !== 'body') return;
-          const rowIndex = data.row.index;
+      const bodyRowsPerPage = 3; // halaman selanjutnya 3 data
+      const firstPageRows = 2;   // halaman pertama 2 data
+      const totalData = tableBody.length;
 
-          if (data.column.index === 5) {
-            const imgBase64 = imagesCH[rowIndex];
-            if (!imgBase64) return;
+      let startY = 35;
+      let rowIndex = 0;
 
-            // Gambar ukuran tetap, tabel menyesuaikan
-            const cellWidth = data.cell.width;
-            const cellHeight = data.cell.height;
+      const totalPages = Math.ceil((totalData - firstPageRows) / bodyRowsPerPage) + 1;
+      let currentPage = 1;
 
-            const x = data.cell.x + (cellWidth - imageWidth) / 2;
-            const y = data.cell.y + (cellHeight - imageHeight) / 2;
+      while (rowIndex < totalData) {
+        const isFirstPage = currentPage === 1;
+        const rowsThisPage = isFirstPage ? firstPageRows : bodyRowsPerPage;
+        const pageData = tableBody.slice(rowIndex, rowIndex + rowsThisPage);
+        const pageImages = imagesCH.slice(rowIndex, rowIndex + rowsThisPage);
 
-            try {
-              pdf.addImage(imgBase64, 'JPEG', x, y, imageWidth, imageHeight);
-            } catch (e) {
-              console.warn('Gagal menambah gambar di baris', rowIndex, e);
+        autoTable(pdf, {
+          startY: startY,
+          head: isFirstPage ? [['NO', 'NAMA', 'NIM', 'KELAS', 'ASAL', 'FOTO']] : undefined,
+          body: pageData,
+          theme: 'grid',
+          styles: {
+            fontSize: 9,
+            cellPadding: 2,
+            minCellHeight: imageHeight + 6,
+            lineWidth: 0.2, // 👉 ketebalan garis tabel
+          },
+          columnStyles: {
+            0: { cellWidth: 10 },
+            1: { cellWidth: 38 }, // nama lebih kecil
+            2: { cellWidth: 30 },
+            3: { cellWidth: 20 },
+            4: { cellWidth: 28 },
+            5: { cellWidth: imageWidth + 4 },
+          },
+          didDrawCell: (data) => {
+            if (data.section !== 'body') return;
+            const imgBase64 = pageImages[data.row.index];
+            if (data.column.index === 5 && imgBase64) {
+              const x = data.cell.x + (data.cell.width - imageWidth) / 2;
+              const y = data.cell.y + (data.cell.height - imageHeight) / 2;
+              try {
+                pdf.addImage(imgBase64, 'JPEG', x, y, imageWidth, imageHeight);
+              } catch (e) {
+                console.warn('Gagal gambar:', e);
+              }
             }
-          }
-        },
+          },
+        });
+
+        // ===== FOOTER HALAMAN =====
+        const pageCount = pdf.internal.getNumberOfPages();
+        pdf.setFontSize(8);
+        pdf.setTextColor(120);
+        pdf.text(
+          `Halaman ${currentPage} dari ${totalPages}`,
+          pageWidth / 2,
+          pdf.internal.pageSize.getHeight() - 5,
+          { align: 'center' }
+        );
+
+        rowIndex += rowsThisPage;
+        currentPage++;
+
+        if (rowIndex < totalData) {
+          pdf.addPage();
+          startY = 20;
+        }
+      }
+
+      // ===== SIMPAN PDF =====
+      pdf.save(`presensi_${filterDate || 'semua'}_${Date.now()}.pdf`);
+      toast.success('PDF berhasil dibuat!', { id: loadingToast });
+    } catch (err) {
+      console.error(err);
+      toast.error('Gagal membuat PDF', { id: loadingToast });
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={generatePDF}
+      disabled={attendances.length === 0 || isGenerating}
+      className={`flex items-center justify-center gap-2 px-5 py-2 rounded-lg font-medium transition-all duration-200 ${
+        isGenerating
+          ? 'bg-gray-400 text-white cursor-wait'
+          : 'bg-blue-600 text-white hover:bg-blue-700'
+      }`}
+    >
+      {isGenerating ? (
+        <>
+          <Loader2 className="w-4 h-4 animate-spin" />
+          Membuat PDF...
+        </>
+      ) : (
+        <>
+          <Download className="w-4 h-4" />
+          Export PDF ({attendances.length})
+        </>
+      )}
+    </button>
+  );
+};
+
+export default PDFExportButton;        },
       });
 
       // ===== FOOTER =====
