@@ -7,7 +7,6 @@ import toast from 'react-hot-toast';
 const PDFExportButton = ({ attendances, filterDate }) => {
   const [isGenerating, setIsGenerating] = useState(false);
 
-  // Fungsi untuk ubah URL gambar jadi base64
   const toDataURL = (url) => {
     return new Promise((resolve) => {
       if (!url) return resolve(null);
@@ -56,7 +55,7 @@ const PDFExportButton = ({ attendances, filterDate }) => {
         (a.nim || '').localeCompare(b.nim || '')
       );
 
-      // ===== SIAPKAN DATA TABEL =====
+      // ===== SIAPKAN DATA =====
       const tableBody = sortedAttendances.map((a, i) => [
         i + 1,
         a.name || '-',
@@ -66,10 +65,9 @@ const PDFExportButton = ({ attendances, filterDate }) => {
         '' // kolom gambar CH
       ]);
 
-      // Ambil hanya gambar CH
       const imagesCH = await Promise.all(sortedAttendances.map(a => toDataURL(a.foto_ch)));
 
-      // ===== TABEL UTAMA =====
+      // ===== TABEL =====
       autoTable(pdf, {
         startY: 35,
         head: [['NO', 'NAMA', 'NIM', 'KELAS', 'ASAL', 'CH']],
@@ -84,11 +82,12 @@ const PDFExportButton = ({ attendances, filterDate }) => {
           4: { cellWidth: 40 },
           5: { cellWidth: 35 },
         },
+        showHead: 'firstPage', // ✅ hanya di halaman pertama
         didDrawCell: (data) => {
           if (data.section !== 'body') return;
           const rowIndex = data.row.index;
 
-          // Gambar CH di kolom ke-5 (index 5)
+          // Gambar CH
           if (data.column.index === 5) {
             const imgBase64 = imagesCH[rowIndex];
             if (!imgBase64) return;
@@ -131,7 +130,6 @@ const PDFExportButton = ({ attendances, filterDate }) => {
     }
   };
 
-  // ===== TOMBOL EXPORT =====
   return (
     <button
       onClick={generatePDF}
