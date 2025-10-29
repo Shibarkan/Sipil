@@ -50,8 +50,13 @@ const PDFExportButton = ({ attendances, filterDate }) => {
       pdf.setFontSize(10);
       pdf.text(`Generated: ${new Date().toLocaleString('id-ID')}`, pageWidth / 2, 28, { align: 'center' });
 
-      // Body
-      const tableBody = attendances.map((a, i) => [
+      // 🔹 Urutkan data berdasarkan NIM (ascending)
+      const sortedAttendances = [...attendances].sort((a, b) =>
+        (a.nim || '').localeCompare(b.nim || '')
+      );
+
+      // Body tabel
+      const tableBody = sortedAttendances.map((a, i) => [
         i + 1,
         a.name || '-',
         a.nim || '-',
@@ -61,9 +66,11 @@ const PDFExportButton = ({ attendances, filterDate }) => {
         ''
       ]);
 
-      const imagesCH = await Promise.all(attendances.map(a => toDataURL(a.foto_ch)));
-      const imagesDies = await Promise.all(attendances.map(a => toDataURL(a.foto_dies)));
+      // Ambil gambar CH dan Dies
+      const imagesCH = await Promise.all(sortedAttendances.map(a => toDataURL(a.foto_ch)));
+      const imagesDies = await Promise.all(sortedAttendances.map(a => toDataURL(a.foto_dies)));
 
+      // Tabel utama
       autoTable(pdf, {
         startY: 35,
         head: [['NO', 'NAMA', 'NIM', 'KELAS', 'ASAL', 'CH', 'Dies Natalis']],
@@ -108,9 +115,15 @@ const PDFExportButton = ({ attendances, filterDate }) => {
         pdf.setPage(i);
         pdf.setFontSize(8);
         pdf.setTextColor(120);
-        pdf.text(`Halaman ${i} dari ${pageCount}`, pageWidth / 2, pdf.internal.pageSize.getHeight() - 5, { align: 'center' });
+        pdf.text(
+          `Halaman ${i} dari ${pageCount}`,
+          pageWidth / 2,
+          pdf.internal.pageSize.getHeight() - 5,
+          { align: 'center' }
+        );
       }
 
+      // Simpan PDF
       pdf.save(`presensi_${filterDate || 'semua'}_${Date.now()}.pdf`);
       toast.success('PDF berhasil dibuat!', { id: loadingToast });
     } catch (err) {
@@ -134,6 +147,19 @@ const PDFExportButton = ({ attendances, filterDate }) => {
       {isGenerating ? (
         <>
           <Loader2 className="w-4 h-4 animate-spin" />
+          Membuat PDF...
+        </>
+      ) : (
+        <>
+          <Download className="w-4 h-4" />
+          Export PDF ({attendances.length})
+        </>
+      )}
+    </button>
+  );
+};
+
+export default PDFExportButton;          <Loader2 className="w-4 h-4 animate-spin" />
           Membuat PDF...
         </>
       ) : (
