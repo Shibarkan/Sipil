@@ -70,7 +70,7 @@ const PDFExportButton = ({ attendances, filterDate }) => {
       // ===== TABEL =====
       autoTable(pdf, {
         startY: 35,
-        head: [['NO', 'NAMA', 'NIM', 'KELAS', 'ASAL', 'CH']],
+        head: [['NO', 'NAMA', 'NIM', 'KELAS', 'ASAL', 'FOTO PRESENSI']],
         body: tableBody,
         theme: 'grid',
         styles: { fontSize: 9, cellPadding: 2, minCellHeight: 42 },
@@ -87,20 +87,22 @@ const PDFExportButton = ({ attendances, filterDate }) => {
           if (data.section !== 'body') return;
           const rowIndex = data.row.index;
 
-          // Gambar CH
           if (data.column.index === 5) {
             const imgBase64 = imagesCH[rowIndex];
             if (!imgBase64) return;
-            const cellWidth = data.cell.width;
-            const cellHeight = data.cell.height;
-            const targetW = 30;
-            const targetH = 40;
-            const scale = Math.min(cellWidth / targetW, cellHeight / targetH);
-            const w = targetW * scale;
-            const h = targetH * scale;
-            const x = data.cell.x + (cellWidth - w) / 2;
-            const y = data.cell.y + (cellHeight - h) / 2;
-            pdf.addImage(imgBase64, 'JPEG', x, y, w, h);
+
+            // === Ukuran gambar seragam ===
+            const fixedWidth = 25; // mm
+            const fixedHeight = 35; // mm
+
+            const x = data.cell.x + (data.cell.width - fixedWidth) / 2;
+            const y = data.cell.y + (data.cell.height - fixedHeight) / 2;
+
+            try {
+              pdf.addImage(imgBase64, 'JPEG', x, y, fixedWidth, fixedHeight);
+            } catch (e) {
+              console.warn('Gagal tambah gambar di baris', rowIndex, e);
+            }
           }
         },
       });
