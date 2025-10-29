@@ -67,20 +67,23 @@ const PDFExportButton = ({ attendances, filterDate }) => {
 
       const imagesCH = await Promise.all(sortedAttendances.map(a => toDataURL(a.foto_ch)));
 
-      // ===== TABEL =====
+      // ===== SETTING TABEL DAN GAMBAR =====
+      const imageWidth = 30; // mm
+      const imageHeight = 40; // mm
+
       autoTable(pdf, {
         startY: 35,
         head: [['NO', 'NAMA', 'NIM', 'KELAS', 'ASAL', 'FOTO PRESENSI']],
         body: tableBody,
         theme: 'grid',
-        styles: { fontSize: 9, cellPadding: 2, minCellHeight: 40 },
+        styles: { fontSize: 9, cellPadding: 2, minCellHeight: imageHeight + 4 },
         columnStyles: {
           0: { cellWidth: 10 },
           1: { cellWidth: 40 },
           2: { cellWidth: 35 },
           3: { cellWidth: 25 },
           4: { cellWidth: 40 },
-          5: { cellWidth: 35 },
+          5: { cellWidth: imageWidth + 5 },
         },
         showHead: 'firstPage', // ✅ header hanya di halaman pertama
         didDrawCell: (data) => {
@@ -91,30 +94,18 @@ const PDFExportButton = ({ attendances, filterDate }) => {
             const imgBase64 = imagesCH[rowIndex];
             if (!imgBase64) return;
 
-            // === Gambar FIT DI DALAM SEL ===
+            // Gambar ukuran tetap, tabel menyesuaikan
             const cellWidth = data.cell.width;
             const cellHeight = data.cell.height;
 
-            // Gambar akan selalu pas di cell
-            const imgMaxWidth = cellWidth - 2;  // beri sedikit jarak
-            const imgMaxHeight = cellHeight - 2;
+            const x = data.cell.x + (cellWidth - imageWidth) / 2;
+            const y = data.cell.y + (cellHeight - imageHeight) / 2;
 
-            // ukuran awal gambar
-            const img = new Image();
-            img.src = imgBase64;
-
-            // setelah gambar siap, hitung skala pas
-            img.onload = () => {
-              const ratio = Math.min(
-                imgMaxWidth / img.width,
-                imgMaxHeight / img.height
-              );
-              const w = img.width * ratio;
-              const h = img.height * ratio;
-              const x = data.cell.x + (cellWidth - w) / 2;
-              const y = data.cell.y + (cellHeight - h) / 2;
-              pdf.addImage(imgBase64, 'JPEG', x, y, w, h);
-            };
+            try {
+              pdf.addImage(imgBase64, 'JPEG', x, y, imageWidth, imageHeight);
+            } catch (e) {
+              console.warn('Gagal menambah gambar di baris', rowIndex, e);
+            }
           }
         },
       });
