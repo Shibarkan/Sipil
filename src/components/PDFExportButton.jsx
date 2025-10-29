@@ -74,7 +74,7 @@ const PDFExportButton = ({ attendances, filterDate }) => {
       // ===== TABEL UTAMA =====
       autoTable(pdf, {
         startY: 35,
-        head: [['NO', 'NAMA', 'NIM', 'KELAS', 'ASAL', 'CH', 'Dies Natalis']],
+        head: [['NO', 'NAMA', 'NIM', 'KELAS', 'ASAL', 'CH']],
         body: tableBody,
         theme: 'grid',
         styles: { fontSize: 9, cellPadding: 2, minCellHeight: 42 },
