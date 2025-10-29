@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 const PDFExportButton = ({ attendances, filterDate }) => {
   const [isGenerating, setIsGenerating] = useState(false);
 
-  // Fungsi ubah URL gambar jadi base64
+  // Fungsi untuk ubah URL gambar jadi base64
   const toDataURL = (url) => {
     return new Promise((resolve) => {
       if (!url) return resolve(null);
@@ -63,13 +63,11 @@ const PDFExportButton = ({ attendances, filterDate }) => {
         a.nim || '-',
         a.kelas || '-',
         a.asal || '-',
-        '',
-        ''
+        '' // kolom gambar CH
       ]);
 
-      // Ambil gambar CH dan Dies
+      // Ambil hanya gambar CH
       const imagesCH = await Promise.all(sortedAttendances.map(a => toDataURL(a.foto_ch)));
-      const imagesDies = await Promise.all(sortedAttendances.map(a => toDataURL(a.foto_dies)));
 
       // ===== TABEL UTAMA =====
       autoTable(pdf, {
@@ -80,18 +78,19 @@ const PDFExportButton = ({ attendances, filterDate }) => {
         styles: { fontSize: 9, cellPadding: 2, minCellHeight: 42 },
         columnStyles: {
           0: { cellWidth: 10 },
-          1: { cellWidth: 35 },
-          2: { cellWidth: 30 },
-          3: { cellWidth: 20 },
-          4: { cellWidth: 35 },
-          5: { cellWidth: 30 },
-          6: { cellWidth: 30 },
+          1: { cellWidth: 40 },
+          2: { cellWidth: 35 },
+          3: { cellWidth: 25 },
+          4: { cellWidth: 40 },
+          5: { cellWidth: 35 },
         },
         didDrawCell: (data) => {
           if (data.section !== 'body') return;
           const rowIndex = data.row.index;
 
-          const drawImageFit = (imgBase64) => {
+          // Gambar CH di kolom ke-5 (index 5)
+          if (data.column.index === 5) {
+            const imgBase64 = imagesCH[rowIndex];
             if (!imgBase64) return;
             const cellWidth = data.cell.width;
             const cellHeight = data.cell.height;
@@ -103,10 +102,7 @@ const PDFExportButton = ({ attendances, filterDate }) => {
             const x = data.cell.x + (cellWidth - w) / 2;
             const y = data.cell.y + (cellHeight - h) / 2;
             pdf.addImage(imgBase64, 'JPEG', x, y, w, h);
-          };
-
-          if (data.column.index === 5) drawImageFit(imagesCH[rowIndex]);
-          if (data.column.index === 6) drawImageFit(imagesDies[rowIndex]);
+          }
         },
       });
 
