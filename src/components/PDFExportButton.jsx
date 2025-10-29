@@ -73,7 +73,7 @@ const PDFExportButton = ({ attendances, filterDate }) => {
         columnStyles: {
           0: { cellWidth: 10 },
           1: { cellWidth: 35 },
-          2: { cellWidth: 25 },
+          2: { cellWidth: 30 },
           3: { cellWidth: 20 },
           4: { cellWidth: 35 },
           5: { cellWidth: 30 },
