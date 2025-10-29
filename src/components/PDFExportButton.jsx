@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 const PDFExportButton = ({ attendances, filterDate }) => {
   const [isGenerating, setIsGenerating] = useState(false);
 
+  // Fungsi ubah URL gambar jadi base64
   const toDataURL = (url) => {
     return new Promise((resolve) => {
       if (!url) return resolve(null);
@@ -42,7 +43,7 @@ const PDFExportButton = ({ attendances, filterDate }) => {
       const pdf = new jsPDF('l', 'mm', 'a4');
       const pageWidth = pdf.internal.pageSize.getWidth();
 
-      // Header
+      // ===== HEADER =====
       pdf.setFontSize(20);
       pdf.text('LAPORAN PRESENSI DIGITAL', pageWidth / 2, 15, { align: 'center' });
       pdf.setFontSize(12);
@@ -50,12 +51,12 @@ const PDFExportButton = ({ attendances, filterDate }) => {
       pdf.setFontSize(10);
       pdf.text(`Generated: ${new Date().toLocaleString('id-ID')}`, pageWidth / 2, 28, { align: 'center' });
 
-      // 🔹 Urutkan data berdasarkan NIM (ascending)
+      // ===== URUTKAN DATA BERDASARKAN NIM =====
       const sortedAttendances = [...attendances].sort((a, b) =>
         (a.nim || '').localeCompare(b.nim || '')
       );
 
-      // Body tabel
+      // ===== SIAPKAN DATA TABEL =====
       const tableBody = sortedAttendances.map((a, i) => [
         i + 1,
         a.name || '-',
@@ -70,7 +71,7 @@ const PDFExportButton = ({ attendances, filterDate }) => {
       const imagesCH = await Promise.all(sortedAttendances.map(a => toDataURL(a.foto_ch)));
       const imagesDies = await Promise.all(sortedAttendances.map(a => toDataURL(a.foto_dies)));
 
-      // Tabel utama
+      // ===== TABEL UTAMA =====
       autoTable(pdf, {
         startY: 35,
         head: [['NO', 'NAMA', 'NIM', 'KELAS', 'ASAL', 'CH', 'Dies Natalis']],
@@ -84,7 +85,7 @@ const PDFExportButton = ({ attendances, filterDate }) => {
           3: { cellWidth: 20 },
           4: { cellWidth: 35 },
           5: { cellWidth: 30 },
-          6: { cellWidth: 30 }
+          6: { cellWidth: 30 },
         },
         didDrawCell: (data) => {
           if (data.section !== 'body') return;
@@ -109,7 +110,7 @@ const PDFExportButton = ({ attendances, filterDate }) => {
         },
       });
 
-      // Footer
+      // ===== FOOTER =====
       const pageCount = pdf.internal.getNumberOfPages();
       for (let i = 1; i <= pageCount; i++) {
         pdf.setPage(i);
@@ -123,7 +124,7 @@ const PDFExportButton = ({ attendances, filterDate }) => {
         );
       }
 
-      // Simpan PDF
+      // ===== SIMPAN PDF =====
       pdf.save(`presensi_${filterDate || 'semua'}_${Date.now()}.pdf`);
       toast.success('PDF berhasil dibuat!', { id: loadingToast });
     } catch (err) {
@@ -134,6 +135,7 @@ const PDFExportButton = ({ attendances, filterDate }) => {
     }
   };
 
+  // ===== TOMBOL EXPORT =====
   return (
     <button
       onClick={generatePDF}
@@ -147,19 +149,6 @@ const PDFExportButton = ({ attendances, filterDate }) => {
       {isGenerating ? (
         <>
           <Loader2 className="w-4 h-4 animate-spin" />
-          Membuat PDF...
-        </>
-      ) : (
-        <>
-          <Download className="w-4 h-4" />
-          Export PDF ({attendances.length})
-        </>
-      )}
-    </button>
-  );
-};
-
-export default PDFExportButton;          <Loader2 className="w-4 h-4 animate-spin" />
           Membuat PDF...
         </>
       ) : (
