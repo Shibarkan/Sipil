@@ -144,7 +144,7 @@ function App() {
               <h1 className="text-3xl font-bold text-gray-800">Absen Kelaz A</h1>
             </div>
             
-      Kelaz<div className="inline-flex items-center gap-2 bg-white px-4 py-2 rounded-lg shadow border border-gray-200 mb-4">
+     <div className="inline-flex items-center gap-2 bg-white px-4 py-2 rounded-lg shadow border border-gray-200 mb-4">
               <Clock className="w-4 h-4 text-blue-600" />
               <span className="text-sm font-medium text-gray-700">{getTodayDisplay()}</span>
             </div>
