@@ -97,7 +97,7 @@ const PDFExportButton = ({ attendances, filterDate }) => {
 
         autoTable(pdf, {
           startY,
-          head: isFirst ? [['NO', 'NAMA', 'NIM', 'KELAS', 'ASAL', 'Bukti(CH) ']] : undefined,
+          head: isFirst ? [['NO', 'NAMA', 'NIM', 'KELAS', 'ASAL', 'Bukti Arak-Arakan ']] : undefined,
           body: pageRows,
           theme: 'grid',
           styles: {
