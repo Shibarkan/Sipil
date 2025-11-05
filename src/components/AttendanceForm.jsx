@@ -254,7 +254,7 @@ const AttendanceForm = ({ onAttendanceAdded }) => {
         <div className="flex gap-4">
           <label className="flex items-center gap-2">
             <input type="radio" name="kegiatan" value="chant" checked={kegiatan === 'chant'} onChange={() => setKegiatan('chant')} />
-            <span>Chant Class (CH)</span>
+            <span>ARAK ARAKAN</span>
           </label>
           <label className="flex items-center gap-2">
             <input type="radio" name="kegiatan" value="dies" checked={kegiatan === 'dies'} onChange={() => setKegiatan('dies')} />
